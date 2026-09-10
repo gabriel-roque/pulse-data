@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940" role="img" aria-labelledby="title desc">
+  <title id="title">Pulse macro architecture</title>
+  <desc id="desc">Clients send events to the ingestion API, which publishes to Kafka. Three consumer groups persist to PostgreSQL, write analytics to ClickHouse, and deliver webhooks. Redis provides distributed rate limiting, Query API serves analytics, and Prometheus, Grafana, Tempo and Loki provide observability.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081326"/>
+      <stop offset="1" stop-color="#122b42"/>
+    </linearGradient>
+    <linearGradient id="ingest" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#18b6a4"/>
+      <stop offset="1" stop-color="#147e91"/>
+    </linearGradient>
+    <linearGradient id="kafka" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#d45a31"/>
+    </linearGradient>
+    <linearGradient id="storage" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b8def"/>
+      <stop offset="1" stop-color="#7958c9"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8ba8bf"/>
+    </marker>
+    <style>
+      .title { font-family: DejaVu Sans; font-size: 38px; font-weight: 700; fill: #f4f8fb; letter-spacing: 1px; }
+      .subtitle { font-family: DejaVu Sans; font-size: 17px; font-weight: 400; fill: #a9c1d2; }
+      .label { font-family: DejaVu Sans; font-size: 20px; font-weight: 700; fill: #f4f8fb; }
+      .small { font-family: DejaVu Sans; font-size: 15px; font-weight: 400; fill: #d5e3eb; }
+      .tiny { font-family: DejaVu Sans; font-size: 13px; font-weight: 400; fill: #a9c1d2; }
+      .box { stroke: #83a7bd; stroke-width: 1.5; }
+      .flow { fill: none; stroke: #8ba8bf; stroke-width: 2.5; marker-end: url(#arrow); }
+      .trace { fill: none; stroke: #799cb3; stroke-width: 2; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="940" rx="28" fill="url(#bg)"/>
+  <circle cx="1430" cy="120" r="220" fill="#1b7483" opacity="0.12"/>
+  <circle cx="180" cy="820" r="260" fill="#6d4fb0" opacity="0.10"/>
+
+  <text x="80" y="78" class="title">PULSE / MACRO ARCHITECTURE</text>
+  <text x="80" y="112" class="subtitle">Multi-tenant event ingestion, fan-out, durable effects and analytics</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="250" width="190" height="100" rx="18" fill="#18344d" class="box"/>
+    <text x="165" y="292" text-anchor="middle" class="label">Clients</text>
+    <text x="165" y="320" text-anchor="middle" class="small">HTTP event producers</text>
+
+    <rect x="340" y="210" width="260" height="180" rx="22" fill="url(#ingest)" class="box"/>
+    <text x="470" y="265" text-anchor="middle" class="label">Ingestion API</text>
+    <text x="470" y="298" text-anchor="middle" class="small">auth / validation</text>
+    <text x="470" y="324" text-anchor="middle" class="small">rate limit / backpressure</text>
+    <text x="470" y="350" text-anchor="middle" class="tiny">202 after Kafka durability</text>
+
+    <rect x="690" y="220" width="245" height="160" rx="22" fill="url(#kafka)" class="box"/>
+    <text x="812" y="275" text-anchor="middle" class="label">Kafka</text>
+    <text x="812" y="306" text-anchor="middle" class="small">events.raw</text>
+    <text x="812" y="333" text-anchor="middle" class="small">tenantId partition key</text>
+    <text x="812" y="359" text-anchor="middle" class="tiny">events.dlq / replay boundary</text>
+  </g>
+
+  <path d="M260 300 H340" class="flow"/>
+  <path d="M600 300 H690" class="flow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1030" y="90" width="245" height="145" rx="20" fill="#214c67" class="box"/>
+    <text x="1152" y="138" text-anchor="middle" class="label">Persistence worker</text>
+    <text x="1152" y="168" text-anchor="middle" class="small">consumer group</text>
+    <text x="1152" y="196" text-anchor="middle" class="tiny">idempotent PostgreSQL writes</text>
+
+    <rect x="1030" y="270" width="245" height="145" rx="20" fill="#3d3d79" class="box"/>
+    <text x="1152" y="318" text-anchor="middle" class="label">Analytics worker</text>
+    <text x="1152" y="348" text-anchor="middle" class="small">consumer group</text>
+    <text x="1152" y="376" text-anchor="middle" class="tiny">ClickHouse OLAP records</text>
+
+    <rect x="1030" y="450" width="245" height="145" rx="20" fill="#74455f" class="box"/>
+    <text x="1152" y="498" text-anchor="middle" class="label">Webhook worker</text>
+    <text x="1152" y="528" text-anchor="middle" class="small">retry / HMAC / bulkhead</text>
+    <text x="1152" y="556" text-anchor="middle" class="tiny">circuit breaker / DLQ</text>
+  </g>
+
+  <path d="M935 270 C980 210 990 170 1030 165" class="flow"/>
+  <path d="M935 300 H1030" class="flow"/>
+  <path d="M935 330 C980 390 990 500 1030 520" class="flow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1320" y="90" width="220" height="125" rx="18" fill="url(#storage)" class="box"/>
+    <text x="1430" y="138" text-anchor="middle" class="label">PostgreSQL</text>
+    <text x="1430" y="169" text-anchor="middle" class="small">tenants / events</text>
+    <text x="1430" y="193" text-anchor="middle" class="tiny">subscriptions / claims</text>
+
+    <rect x="1320" y="270" width="220" height="125" rx="18" fill="url(#storage)" class="box"/>
+    <text x="1430" y="318" text-anchor="middle" class="label">ClickHouse</text>
+    <text x="1430" y="349" text-anchor="middle" class="small">time-series analytics</text>
+    <text x="1430" y="373" text-anchor="middle" class="tiny">tenant / type summaries</text>
+
+    <rect x="1320" y="450" width="220" height="125" rx="18" fill="#874b59" class="box"/>
+    <text x="1430" y="498" text-anchor="middle" class="label">External APIs</text>
+    <text x="1430" y="529" text-anchor="middle" class="small">signed webhooks</text>
+    <text x="1430" y="553" text-anchor="middle" class="tiny">timeouts / retries</text>
+  </g>
+
+  <path d="M1275 162 H1320" class="flow"/>
+  <path d="M1275 342 H1320" class="flow"/>
+  <path d="M1275 522 H1320" class="flow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="350" y="515" width="250" height="120" rx="20" fill="#214c67" class="box"/>
+    <text x="475" y="562" text-anchor="middle" class="label">Redis</text>
+    <text x="475" y="592" text-anchor="middle" class="small">distributed token bucket</text>
+    <text x="475" y="616" text-anchor="middle" class="tiny">shared across API replicas</text>
+
+    <rect x="690" y="515" width="245" height="120" rx="20" fill="#315678" class="box"/>
+    <text x="812" y="562" text-anchor="middle" class="label">Query API</text>
+    <text x="812" y="592" text-anchor="middle" class="small">analytics queries</text>
+    <text x="812" y="616" text-anchor="middle" class="tiny">period / tenant / type</text>
+
+    <rect x="350" y="735" width="585" height="110" rx="20" fill="#18344d" class="box"/>
+    <text x="642" y="780" text-anchor="middle" class="label">Observability</text>
+    <text x="642" y="809" text-anchor="middle" class="small">Prometheus + Grafana | Tempo + Loki | metrics, traces and JSON logs</text>
+  </g>
+
+  <path d="M470 390 V515" class="flow"/>
+  <path d="M600 575 H690" class="flow"/>
+  <path d="M812 380 V515" class="flow"/>
+  <path d="M470 390 C400 470 380 660 500 735" class="trace"/>
+  <path d="M812 635 V735" class="trace"/>
+  <path d="M470 390 C380 420 300 520 350 790" class="trace"/>
+
+  <text x="80" y="890" class="tiny">Delivery: at-least-once messaging + idempotent consumers | ordering: tenant partition key | no end-to-end exactly-once promise</text>
+</svg>

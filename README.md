@@ -20,6 +20,15 @@ result templates.
 
 ## Architecture at a glance
 
+![Pulse macro architecture](docs/architecture/pulse-architecture.png)
+
+The PNG above shows the runtime flow at a macro level: authenticated clients
+publish durable events through the ingestion API and Kafka, independent worker
+groups apply effects to PostgreSQL, ClickHouse and external webhooks, while
+Redis and the observability stack support the platform. The editable sources
+are [`pulse-architecture.svg`](docs/architecture/pulse-architecture.svg) and
+[`diagram.mmd`](docs/architecture/diagram.mmd).
+
 ```text
 Clients -> ingestion -> Kafka events.raw
                          |       |        |
