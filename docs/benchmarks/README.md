@@ -7,12 +7,12 @@ events/s is a test input and acceptance goal, not a measured throughput.
 
 | Profile | Workload | Purpose | Result |
 | --- | --- | --- | --- |
-| Smoke | 10 req/s for 1 minute | Fast wiring check | PENDING |
-| Baseline | 1,000 req/s for 5 minutes | Reference behavior | PENDING |
-| Progression | 1k, 5k, 10k, 25k, 50k, 75k, 100k req/s, 2 minutes each | Find degradation and sustainable ceiling | PENDING |
-| Spike | Abrupt increase to 10k req/s | Recovery and shedding behavior | PENDING |
-| Stress | Up to 100k req/s with a 5-minute final stage | Find saturation | PENDING |
-| Soak | 1k req/s for 1 hour by default | Detect slow leaks and backlog growth | PENDING |
+| Smoke | 10 req/s for 1 minute | Fast wiring check | PASS: 600 events, p95 7.83 ms, p99 8.14 ms, 0% errors |
+| Baseline | 1,000 req/s for 5 minutes | Reference behavior | PASS ingestion: 300,002 events, p95 12.89 ms, p99 16.86 ms, 0% errors; consumer backlog remained |
+| Progression | 1k, 5k, 10k, 25k, 50k, 75k, 100k req/s, 2 minutes each | Find degradation and sustainable ceiling | NOT EXECUTED: bounded host already showed consumer saturation |
+| Spike | Abrupt increase to 10k req/s | Recovery and shedding behavior | NOT EXECUTED: bounded host limitation |
+| Stress | Up to 100k req/s with a 5-minute final stage | Find saturation | NOT EXECUTED: bounded host limitation |
+| Soak | 1k req/s for 1 hour by default | Detect slow leaks and backlog growth | NOT EXECUTED: bounded host limitation |
 
 Profiles live in `tests/load/` and are executed through `scripts/run-k6.sh`.
 The default k6 thresholds are error rate below 1%, p95 below 250 ms, p99 below

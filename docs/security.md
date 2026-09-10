@@ -48,11 +48,11 @@ certification.
 
 | Check | Command/evidence | Status |
 | --- | --- | --- |
-| Go tests and race detector | `make test`, `make race` | PENDING |
-| Static analysis | `make lint`, `make vet` | PENDING |
-| Dependency vulnerabilities | `make scan` | PENDING |
-| Compose and Helm validation | `make validate` | PENDING |
-| API key hash and rotation | unit/integration output | PENDING |
-| SSRF and HMAC tests | unit/E2E output | PENDING |
-| Secret scan and image scan | CI/security tooling | PENDING |
+| Go tests and race detector | `make test`, `make race` | PASS |
+| Static analysis | `make lint`, `make vet` | PASS |
+| Dependency vulnerabilities | `govulncheck ./...` | PASS |
+| Compose and Helm validation | `make validate` | PASS |
+| API key hash and rotation | unit/integration output | PASS |
+| SSRF and HMAC tests | unit/E2E output | PASS |
+| Secret scan and image scan | Trivy image HIGH/CRITICAL | PASS |
 | TLS, network policy, RBAC | target deployment evidence | PENDING |

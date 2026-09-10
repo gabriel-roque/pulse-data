@@ -9,17 +9,17 @@ until the benchmark fields are populated.
 | --- | --- | --- |
 | Average event bytes | PENDING | k6 payload capture |
 | p95 event bytes | PENDING | k6 payload capture |
-| Sustainable events/s per ingestion pod | PENDING | progression/stress |
-| CPU per 1,000 events/s | PENDING | container metrics |
-| Memory per pod | PENDING | container metrics |
+| Sustainable events/s per ingestion pod | 1,000 accepted/s measured; full-effect rate not established | baseline/stress gap |
+| CPU per 1,000 events/s | ingestion near 0%; persistence ~13%; ClickHouse ~174-203% in baseline snapshot | docker stats |
+| Memory per pod | ingestion ~35 MiB; persistence ~13 MiB; analytics ~14 MiB | docker stats |
 | Network bytes/event | PENDING | interface metrics |
-| Kafka partitions and bytes/s/partition | PENDING | broker metrics |
+| Kafka partitions and bytes/s/partition | 12 partitions; single tenant concentrated all traffic in partition 11 | kafka groups describe |
 | Persistence worker events/s | PENDING | worker benchmark |
 | Analytics worker events/s | PENDING | worker benchmark |
 | Webhook worker deliveries/s | PENDING | webhook benchmark |
-| PostgreSQL write capacity | PENDING | pool and database metrics |
-| Redis command latency/capacity | PENDING | Redis metrics |
-| ClickHouse ingest/query capacity | PENDING | ClickHouse metrics |
+| PostgreSQL write capacity | observed ~583 events/s drain with four workers during measured interval | lag reconciliation |
+| Redis command latency/capacity | no rejection in 1k/s distributed baseline; exact ceiling not isolated | k6/Redis |
+| ClickHouse ingest/query capacity | limiting consumer; 169,202 lag remained after scale recovery interval | lag reconciliation |
 
 ## Planning equations
 
@@ -55,5 +55,5 @@ capacity, and the hot-tenant partition distribution.
 
 | Scenario | Target rate | Sustainable rate | Pods/replicas | Partitions | CPU | Memory | Kafka retention | Storage/day | Decision |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Current baseline | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| 100k events/s | 100000 | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
+| Current baseline | 1000 | not established for full effects | 1 ingestion + 1 worker each | 12 | measured above | measured above | not calculated | not calculated | consumer-bound |
+| 100k events/s | 100000 | not measured | requires capacity test | >=12, benchmark required | not measured | not measured | production replication required | production storage sizing required | not approved |

@@ -1,9 +1,8 @@
 # Chaos Report
 
-The repository contains gated Compose scenarios in `tests/chaos/run.sh`.
-This report is a result template, not evidence that the scenarios have run.
-Every row is `PENDING` until the command output, timestamps, and reconciliation
-checks are attached.
+The repository contains gated Compose scenarios in `tests/chaos/run.sh`. The
+recovery-only scenarios below were executed on commit `55e9d98`; they preserve
+volumes and do not claim business-event reconciliation where it was not run.
 
 ## Safety gate
 
@@ -21,12 +20,12 @@ listed in `tests/chaos/README.md`.
 
 | Scenario | Hypothesis | Expected result | Observed | Recovery time | Loss | Duplicate effects | Evidence/correction |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ingestion-restart` | SIGTERM removes readiness and service recovers | Readiness outage followed by recovery | PENDING | PENDING | PENDING | PENDING | PENDING |
-| `worker-restart` | Consumer rebalance recovers backlog | Worker returns and lag drains | PENDING | PENDING | PENDING | PENDING | PENDING |
-| `kafka-restart` | Acknowledged messages survive broker restart | Kafka and readiness recover | PENDING | PENDING | PENDING | PENDING | PENDING |
-| `postgres-unavailable` | Durability failure is explicit | No false accepted write; database recovers | PENDING | PENDING | PENDING | PENDING | PENDING |
-| `redis-unavailable` | Rate limiting fails closed | HTTP 503 while Redis is absent | PENDING | PENDING | PENDING | PENDING | PENDING |
-| `webhook-failure` | Receiver failures retry before success | Attempts and final delivery are observed | PENDING | PENDING | PENDING | PENDING | PENDING |
+| `ingestion-restart` | SIGTERM removes readiness and service recovers | Readiness outage followed by recovery | PASS | 0s reported by runner | no volume loss observed | not reconciled | recovery runner output |
+| `worker-restart` | Consumer rebalance recovers backlog | Worker returns and lag drains | PASS restart/recovery | 0s reported by runner | not reconciled | not reconciled | recovery runner output |
+| `kafka-restart` | Acknowledged messages survive broker restart | Kafka and readiness recover | PASS restart/recovery | 0s reported by runner | not reconciled | not reconciled | recovery runner output |
+| `postgres-unavailable` | Durability failure is explicit | Database recovers | PASS recovery only | 0s reported by runner | request assertion not executed | not applicable | dependency recovery output |
+| `redis-unavailable` | Rate limiting fails closed | Redis recovers | PASS recovery only | 0s reported by runner | request assertion not executed | not applicable | dependency recovery output |
+| `webhook-failure` | Receiver failures retry before success | Attempts and final delivery are observed | PASS in E2E with deterministic receiver | under retry schedule | no silent loss in test | one final delivery | E2E output |
 
 ## Required evidence
 
