@@ -1,12 +1,13 @@
 # k6 Load Profiles
 
-All profiles require `PULSE_API_URL` and `PULSE_API_KEY`. They perform a real
-HTTP POST and require HTTP 202 plus `X-Pulse-Durability`; missing dependencies
-or missing credentials fail before load starts.
+All profiles require `PULSE_API_URL` and `PULSE_API_KEY` or
+`PULSE_API_KEYS`. They perform real HTTP POSTs and require HTTP 202 plus
+`X-Pulse-Durability`; missing dependencies or credentials fail before load.
 
 ```sh
 PULSE_API_URL=http://127.0.0.1:8080 PULSE_API_KEY=... scripts/run-k6.sh smoke
 PULSE_API_URL=http://127.0.0.1:8080 PULSE_API_KEY=... scripts/run-k6.sh baseline
+./scripts/stress-test.sh
 ```
 
 Profiles are fixed and intentionally honest: smoke is 10 req/s for 1 minute,

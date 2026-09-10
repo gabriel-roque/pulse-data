@@ -17,10 +17,9 @@ docker compose logs --since 10m ingestion persistence-worker analytics-worker we
 ## `make e2e` times out
 
 Check ingestion readiness on port 8080 and query-api readiness on port 8081.
-Inspect the dependency health checks and use `docker compose logs` before
-restarting. `make e2e` validates health endpoints only; full tenant, webhook,
-duplicate, and retry behavior is in `tests/e2e/run.sh` and requires its
-explicit environment.
+Inspect dependency health checks and use `docker compose logs` before
+restarting. `make e2e` runs the tenant, webhook, duplicate, persistence, and
+analytics flow; its explicit environment is documented in `tests/e2e/README.md`.
 
 ## Ingestion returns `401`
 

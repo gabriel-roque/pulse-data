@@ -1,18 +1,17 @@
 flowchart LR
-    C[Clients] --> I[Ingestion API\nAuth + rate limit + validation]
+    C[Clients] --> I[Ingestion API\nauth · validate · rate limit]
     I -->|sync publish\nkey: tenantId| K[(Kafka\nevents.raw)]
-    K --> P[Persistence worker\ngroup: persistence-workers]
-    K --> A[Analytics worker\ngroup: analytics-workers]
-    K --> W[Webhook worker\ngroup: webhook-workers]
-    P --> PG[(PostgreSQL\ntenants/events/subscriptions)]
+    K --> P[Persistence worker]
+    K --> A[Analytics worker]
+    K --> W[Webhook worker]
+    P --> PG[(PostgreSQL\noperational state)]
     A --> CH[(ClickHouse\nanalytics)]
-    W --> PG
-    W --> X[External webhook APIs]
-    I --> R[(Redis\ndistributed rate limit)]
-    Q[Query API] --> CH
-    C --> Q
-    I -.-> O[Prometheus / Grafana]
-    Q -.-> O
+    W --> X[External APIs\nsigned webhooks]
+
+    I -.-> R[(Redis\ndistributed rate limit)]
+    Q[Query API\ntenant-scoped] --> CH
     K --> D[(events.dlq)]
-    I -.-> T[Tempo / Loki]
-    Q -.-> T
+
+    subgraph Support
+        O[Observability\nmetrics · traces · logs]
+    end

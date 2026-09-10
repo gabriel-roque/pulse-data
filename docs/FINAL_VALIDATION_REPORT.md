@@ -1,11 +1,12 @@
 # Final Validation Report
 
 This report records the local validation evidence. Results below are not a
-claim that the 100,000 events/s target was achieved.
+claim that the 100,000 events/s target was achieved. Later documentation and
+diagram-only changes do not alter these measurements.
 
 | Field | Result/evidence |
 | --- | --- |
-| Commit tested | `55e9d98` (dependency/security fix; final code rebuild) |
+| Commit tested | `ce9df09` (platform hardening and operational baseline) |
 | Date and timezone | 2026-09-09/10, America/Sao_Paulo (UTC-03) |
 | Environment/hardware | Linux amd64, 12 vCPU, 31 GiB RAM, Docker Engine 29.8.0 |
 | Versions | Go 1.25.13, Compose 5.5.1, Kafka 3.9.0, PostgreSQL 17, Redis 7.4, ClickHouse 25.3, k6 2.2.0 |

@@ -36,8 +36,8 @@ not enough evidence that the backlog was recovered.
 - If a poison message blocks progress, preserve the message and use the DLQ
   procedure; do not delete offsets as a first response.
 
-Expected current behavior: a handler error that is not terminal exits the
-consumer loop, while decode errors and explicit `DeadLetterError` failures are
+Expected current behavior: transient fetch and handler errors retry with
+bounded backoff. Invalid messages and explicit `DeadLetterError` failures are
 written to `events.dlq` before the source offset is committed.
 
 ## PostgreSQL unavailable or slow
