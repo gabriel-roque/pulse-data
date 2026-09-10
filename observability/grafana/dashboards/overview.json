@@ -1,0 +1,17 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"type": "timeseries", "title": "HTTP requests / second", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "sum(rate(pulse_http_requests_total[5m]))", "legendFormat": "requests/s"}]},
+    {"type": "timeseries", "title": "HTTP p95 latency", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(pulse_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95"}]},
+    {"type": "stat", "title": "Published events", "gridPos": {"h": 5, "w": 8, "x": 0, "y": 8}, "targets": [{"expr": "sum(increase(pulse_kafka_published_total[1h]))"}]},
+    {"type": "stat", "title": "Rate limit rejections", "gridPos": {"h": 5, "w": 8, "x": 8, "y": 8}, "targets": [{"expr": "sum(increase(pulse_rate_limit_rejected_total[1h]))"}]},
+    {"type": "stat", "title": "Event failures", "gridPos": {"h": 5, "w": 8, "x": 16, "y": 8}, "targets": [{"expr": "sum(increase(pulse_events_failed_total[1h]))"}]}
+  ],
+  "schemaVersion": 39,
+  "tags": ["pulse", "overview"],
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Pulse Overview",
+  "uid": "pulse-overview",
+  "version": 1
+}

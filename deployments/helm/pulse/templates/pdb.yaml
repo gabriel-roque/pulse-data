@@ -1,0 +1,21 @@
+{{- if .Values.pdb.enabled }}
+{{- range $component, $settings := .Values.components }}
+{{- if $settings.pdb }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "pulse.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "pulse.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component | quote }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "pulse.name" $ | quote }}
+      app.kubernetes.io/instance: {{ $.Release.Name | quote }}
+      app.kubernetes.io/component: {{ $component | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

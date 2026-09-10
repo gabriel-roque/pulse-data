@@ -1,0 +1,15 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"type": "timeseries", "title": "Kafka publish latency", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "histogram_quantile(0.95, sum by (le, topic) (rate(pulse_kafka_publish_latency_seconds_bucket[5m])))", "legendFormat": "{{topic}} p95"}]},
+    {"type": "timeseries", "title": "Published events", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "sum by (topic) (rate(pulse_kafka_published_total[5m]))", "legendFormat": "{{topic}}"}]},
+    {"type": "timeseries", "title": "Consumer lag", "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}, "targets": [{"expr": "sum by (group) (pulse_consumer_lag)", "legendFormat": "{{group}}"}]}
+  ],
+  "schemaVersion": 39,
+  "tags": ["pulse", "kafka"],
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Pulse Kafka",
+  "uid": "pulse-kafka",
+  "version": 1
+}

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pulse.fullname" . }}-config
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+data:
+  PULSE_HTTP_ADDR: {{ .Values.config.httpAddr | quote }}
+  PULSE_KAFKA_BROKERS: {{ .Values.config.kafkaBrokers | quote }}
+  PULSE_KAFKA_TOPIC: {{ .Values.config.kafkaTopic | quote }}
+  PULSE_CLICKHOUSE_ADDR: {{ .Values.config.clickhouseAddr | quote }}
+  PULSE_CLICKHOUSE_DATABASE: {{ .Values.config.clickhouseDatabase | quote }}
+  PULSE_RATE_LIMIT: {{ .Values.config.rateLimit | quote }}
+  PULSE_RATE_WINDOW: {{ .Values.config.rateWindow | quote }}
+  PULSE_MAX_PAYLOAD_BYTES: {{ .Values.config.maxPayloadBytes | quote }}

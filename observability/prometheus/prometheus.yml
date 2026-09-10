@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: pulse-ingestion
+    static_configs:
+      - targets: [ingestion:8080]
+        labels:
+          service: ingestion
+    metrics_path: /metrics
+
+  - job_name: pulse-query-api
+    static_configs:
+      - targets: [query-api:8080]
+        labels:
+          service: query-api
+    metrics_path: /metrics
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [prometheus:9090]

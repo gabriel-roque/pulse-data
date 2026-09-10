@@ -1,0 +1,39 @@
+{{- range $component, $settings := .Values.components }}
+{{- if $settings.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "pulse.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "pulse.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component | quote }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "pulse.fullname" $ }}-{{ $component }}
+  minReplicas: {{ $settings.autoscaling.minReplicas }}
+  maxReplicas: {{ $settings.autoscaling.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $settings.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

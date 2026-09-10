@@ -1,0 +1,108 @@
+image:
+  repository: ghcr.io/pulse-data/pulse
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+config:
+  httpAddr: ":8080"
+  postgresDSN: postgres://pulse:change-me@postgresql:5432/pulse?sslmode=disable
+  redisURL: redis://redis:6379/0
+  kafkaBrokers: kafka:9092
+  kafkaTopic: events.raw
+  clickhouseAddr: clickhouse:9000
+  clickhouseDatabase: default
+  rateLimit: "1000"
+  rateWindow: 1m
+  maxPayloadBytes: "1048576"
+
+secrets:
+  adminToken: ""
+  postgresDSN: ""
+  redisURL: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+components:
+  ingestion:
+    service: true
+    port: 8080
+    replicas: 2
+    pdb: true
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: "1", memory: 512Mi}
+  query-api:
+    service: true
+    port: 8080
+    replicas: 2
+    pdb: true
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: "1", memory: 512Mi}
+  persistence-worker:
+    service: false
+    replicas: 1
+    pdb: false
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: "1", memory: 512Mi}
+  analytics-worker:
+    service: false
+    replicas: 1
+    pdb: false
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: "1", memory: 512Mi}
+  webhook-worker:
+    service: false
+    replicas: 1
+    pdb: false
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: "1", memory: 512Mi}
+
+pdb:
+  enabled: true
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 25%

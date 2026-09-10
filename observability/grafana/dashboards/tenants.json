@@ -1,0 +1,15 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"type": "timeseries", "title": "Accepted events by tenant", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "sum by (tenant) (rate(pulse_events_received_total[5m]))", "legendFormat": "{{tenant}}"}]},
+    {"type": "timeseries", "title": "Rate limit rejections by tenant", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "sum by (tenant) (rate(pulse_rate_limit_rejected_total[5m]))", "legendFormat": "{{tenant}}"}]},
+    {"type": "timeseries", "title": "Duplicate events by tenant", "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}, "targets": [{"expr": "sum by (tenant) (rate(pulse_events_duplicate_total[5m]))", "legendFormat": "{{tenant}}"}]}
+  ],
+  "schemaVersion": 39,
+  "tags": ["pulse", "tenants"],
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Pulse Tenants",
+  "uid": "pulse-tenants",
+  "version": 1
+}
