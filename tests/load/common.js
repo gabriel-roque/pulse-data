@@ -2,14 +2,8 @@ import http from 'k6/http';
 import { check, fail } from 'k6';
 
 export const apiURL = (__ENV.PULSE_API_URL || __ENV.API_URL || '').replace(/\/$/, '');
-export const apiKey = __ENV.PULSE_API_KEY || __ENV.API_KEY || '';
-
-if (!apiURL) {
-  throw new Error('PULSE_API_URL (or API_URL) is required; load tests never default to an unknown service');
-}
-if (!apiKey) {
-  throw new Error('PULSE_API_KEY (or API_KEY) is required; create a test tenant explicitly before loading');
-}
+export const apiKeys = (__ENV.PULSE_API_KEYS || __ENV.PULSE_API_KEY || __ENV.API_KEY || '')
+  .split(',').map((value) => value.trim()).filter(Boolean);
 
 export function numberEnv(name, fallback) {
   const value = Number(__ENV[name] || fallback);
@@ -35,6 +29,12 @@ export function thresholds() {
 }
 
 export function setup() {
+  if (!apiURL) {
+    throw new Error('PULSE_API_URL (or API_URL) is required; load tests never default to an unknown service');
+  }
+  if (apiKeys.length === 0) {
+    throw new Error('PULSE_API_KEY (or API_KEY) is required; create a test tenant explicitly before loading');
+  }
   const response = http.get(`${apiURL}/health/ready`, { tags: { endpoint: 'ready' } });
   if (response.status !== 200) {
     fail(`API readiness check failed with HTTP ${response.status}; external dependency is unavailable`);
@@ -50,8 +50,9 @@ export function postEvent(profile) {
     timestamp: new Date().toISOString(),
     payload: { profile, vu: __VU, iteration: __ITER },
   });
+  const key = apiKeys[(__VU - 1) % apiKeys.length];
   const response = http.post(`${apiURL}/v1/events`, body, {
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     tags: { endpoint: 'events', profile },
   });
   check(response, {

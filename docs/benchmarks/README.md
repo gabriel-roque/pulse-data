@@ -32,7 +32,7 @@ targets, or an unrecorded dashboard screenshot.
 | Client and server hardware | PENDING |
 | OS, Go, Docker, Kafka, k6 versions | PENDING |
 | Event size distribution | PENDING |
-| Tenants and partition-key distribution | PENDING |
+ | Tenants and partition-key distribution | PENDING |
 | Offered rate | PENDING |
 | Achieved throughput | PENDING |
 | p50 / p95 / p99 | PENDING |
