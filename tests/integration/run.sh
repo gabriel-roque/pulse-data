@@ -64,7 +64,7 @@ while [ "$i" -lt "${PULSE_EVENTUAL_TIMEOUT:-90}" ]; do
     status=$(curl --silent --show-error --output "$tmp/summary.json" --write-out '%{http_code}' \
         -H "Authorization: Bearer $API_KEY" \
         "$QUERY_URL/v1/analytics/summary?type=$event_type")
-    if [ "$status" = 200 ] && [ "$(jq -r --arg type "$event_type" 'map(select(.type == $type) | .count) | first // 0' "$tmp/summary.json")" = 1 ]; then
+    if [ "$status" = 200 ] && [ "$(jq -r --arg type "$event_type" '(. // []) | map(select(.type == $type) | .count) | first // 0' "$tmp/summary.json")" = 1 ]; then
         break
     fi
     i=$((i + 1))

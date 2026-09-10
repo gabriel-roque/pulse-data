@@ -48,7 +48,12 @@ e2e: up
 load-smoke: up
 	@test -f "$(LOAD_TEST)" || { echo "load test not found: $(LOAD_TEST)" >&2; exit 1; }
 	command -v k6 >/dev/null || { echo "k6 is required for load-smoke" >&2; exit 1; }
-	k6 run "$(LOAD_TEST)"
+	api_key=$${PULSE_API_KEY:-$${PULSE_LOAD_API_KEY:-}}; \
+	if [ -z "$$api_key" ]; then \
+		command -v curl >/dev/null && command -v jq >/dev/null || { echo "curl and jq are required to provision a smoke tenant" >&2; exit 1; }; \
+		api_key=$$(curl --fail --silent --show-error -H "X-Admin-Token: $${PULSE_ADMIN_TOKEN:-change-me-admin}" -H 'Content-Type: application/json' --data '{"name":"make-load-smoke"}' "http://127.0.0.1:$${PULSE_INGESTION_PORT:-8080}/v1/tenants" | jq -er .apiKey); \
+	fi; \
+	PULSE_API_URL=$${PULSE_API_URL:-http://127.0.0.1:$${PULSE_INGESTION_PORT:-8080}} PULSE_API_KEY="$$api_key" k6 run "$(LOAD_TEST)"
 
 validate:
 	$(COMPOSE) config --quiet

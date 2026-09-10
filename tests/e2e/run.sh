@@ -76,7 +76,7 @@ while [ "$i" -lt "${PULSE_E2E_TIMEOUT:-120}" ]; do
         -H "Authorization: Bearer $API_KEY" "$QUERY_URL/v1/analytics/summary?type=$event_type"); then
         test_die "analytics query dependency is unavailable"
     fi
-    if [ "$status" = 200 ] && [ "$(jq -r --arg type "$event_type" 'map(select(.type == $type) | .count) | first // 0' "$tmp/summary.json")" = 1 ]; then break; fi
+    if [ "$status" = 200 ] && [ "$(jq -r --arg type "$event_type" '(. // []) | map(select(.type == $type) | .count) | first // 0' "$tmp/summary.json")" = 1 ]; then break; fi
     i=$((i + 1))
     sleep 1
 done
