@@ -2,12 +2,57 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 )
 
-func TestMemoryLimitIsAtomicAcrossGoroutines(t *testing.T) {
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	c.mu.Unlock()
+}
+
+func TestMemoryTokenBucketAllowsBurstThenRefills(t *testing.T) {
+	clock := &testClock{now: time.Unix(0, 0)}
+	l := NewMemoryWithClock(3, 10*time.Second, clock.Now)
+
+	for i := 0; i < 3; i++ {
+		if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+			t.Fatalf("burst request %d: allowed=%v err=%v", i, ok, err)
+		}
+	}
+	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || ok {
+		t.Fatalf("request beyond burst: allowed=%v err=%v", ok, err)
+	}
+
+	clock.Advance(5 * time.Second)
+	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+		t.Fatalf("half-window refill: allowed=%v err=%v", ok, err)
+	}
+	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || ok {
+		t.Fatalf("fractional token consumed too early: allowed=%v err=%v", ok, err)
+	}
+
+	clock.Advance(5 * time.Second)
+	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+		t.Fatalf("full-window refill: allowed=%v err=%v", ok, err)
+	}
+}
+
+func TestMemoryTokenBucketIsAtomicAcrossGoroutines(t *testing.T) {
 	l := NewMemory(10, time.Minute)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -32,13 +77,14 @@ func TestMemoryLimitIsAtomicAcrossGoroutines(t *testing.T) {
 		t.Fatalf("allowed %d requests, want 10", allowed)
 	}
 }
-func TestMemoryWindowExpires(t *testing.T) {
-	l := NewMemory(1, time.Nanosecond)
-	if ok, _ := l.Allow(context.Background(), "t"); !ok {
-		t.Fatal("first request rejected")
+
+func TestMemoryInvalidWindowFailsClosed(t *testing.T) {
+	l := NewMemoryWithClock(1, 0, time.Now)
+	ok, err := l.Allow(context.Background(), "tenant")
+	if ok {
+		t.Fatal("invalid window was allowed")
 	}
-	time.Sleep(time.Millisecond)
-	if ok, _ := l.Allow(context.Background(), "t"); !ok {
-		t.Fatal("new window rejected")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error=%v, want ErrUnavailable", err)
 	}
 }

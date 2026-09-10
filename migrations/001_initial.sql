@@ -31,3 +31,14 @@ CREATE TABLE IF NOT EXISTS webhook_subscriptions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS webhook_subscriptions_lookup_idx ON webhook_subscriptions (tenant_id, event_type, enabled);
+
+CREATE TABLE IF NOT EXISTS webhook_delivery_claims (
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    event_id TEXT NOT NULL,
+    subscription_id TEXT NOT NULL REFERENCES webhook_subscriptions(id),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed')),
+    claimed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_until TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    UNIQUE (tenant_id, event_id, subscription_id)
+);

@@ -20,3 +20,16 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: [prometheus:9090]
+
+  - job_name: pulse-workers
+    static_configs:
+      - targets: [persistence-worker:9091]
+        labels:
+          service: persistence-worker
+      - targets: [analytics-worker:9091]
+        labels:
+          service: analytics-worker
+      - targets: [webhook-worker:9091]
+        labels:
+          service: webhook-worker
+    metrics_path: /metrics

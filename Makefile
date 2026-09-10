@@ -34,12 +34,16 @@ build:
 	$(GO) build ./cmd/...
 
 integration: up
-	$(GO) test ./...
+	PULSE_INTEGRATION_REAL=1 PULSE_ADMIN_TOKEN=$${PULSE_ADMIN_TOKEN:-change-me-admin} tests/integration/run.sh
 
 e2e: up
-	@i=0; while ! curl --fail --silent http://127.0.0.1:$${PULSE_INGESTION_PORT:-8080}/health/ready >/dev/null; do i=$$((i + 1)); test $$i -lt 60; sleep 2; done
-	curl --fail --silent http://127.0.0.1:$${PULSE_INGESTION_PORT:-8080}/health/live >/dev/null
-	curl --fail --silent http://127.0.0.1:$${PULSE_QUERY_PORT:-8081}/health/ready >/dev/null
+	PULSE_ALLOW_PRIVATE_WEBHOOKS=true $(COMPOSE) --profile e2e up -d --build
+	PULSE_E2E_REAL=1 PULSE_ADMIN_TOKEN=$${PULSE_ADMIN_TOKEN:-change-me-admin} \
+	PULSE_E2E_WEBHOOK_URL=http://webhook-mock:8090/receive \
+	PULSE_E2E_WEBHOOK_STATUS_URL=http://127.0.0.1:$${PULSE_WEBHOOK_MOCK_PORT:-8090}/deliveries \
+	PULSE_E2E_WEBHOOK_RESET_URL=http://127.0.0.1:$${PULSE_WEBHOOK_MOCK_PORT:-8090}/reset \
+	PULSE_E2E_WEBHOOK_CONFIG_URL=http://127.0.0.1:$${PULSE_WEBHOOK_MOCK_PORT:-8090}/config \
+	tests/e2e/run.sh
 
 load-smoke: up
 	@test -f "$(LOAD_TEST)" || { echo "load test not found: $(LOAD_TEST)" >&2; exit 1; }
@@ -48,8 +52,8 @@ load-smoke: up
 
 validate:
 	$(COMPOSE) config --quiet
-	@if command -v helm >/dev/null; then helm lint deployments/helm/pulse; helm template pulse deployments/helm/pulse >/dev/null; else echo "helm not installed; skipped Helm validation"; fi
-	@if command -v promtool >/dev/null; then promtool check config observability/prometheus/prometheus.yml; else echo "promtool not installed; skipped Prometheus validation"; fi
+	@if command -v helm >/dev/null; then helm lint deployments/helm/pulse; helm template pulse deployments/helm/pulse >/dev/null; else docker run --rm -v "$(CURDIR):/work:ro" alpine/helm:3.17 lint /work/deployments/helm/pulse; docker run --rm -v "$(CURDIR):/work:ro" alpine/helm:3.17 template pulse /work/deployments/helm/pulse >/dev/null; fi
+	@if command -v promtool >/dev/null; then promtool check config observability/prometheus/prometheus.yml; else docker run --rm --entrypoint promtool -v "$(CURDIR):/work:ro" prom/prometheus:v3.5.0 check config /work/observability/prometheus/prometheus.yml; fi
 
 scan:
 	command -v govulncheck >/dev/null || { echo "govulncheck is required for scan" >&2; exit 1; }

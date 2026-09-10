@@ -17,6 +17,10 @@ import (
 	"github.com/pulse-data/pulse/internal/ratelimit"
 	"github.com/pulse-data/pulse/internal/telemetry"
 	"github.com/pulse-data/pulse/internal/webhook"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Publisher interface {
@@ -234,9 +238,20 @@ func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) instrument(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := telemetry.StartSpan(ctx, r.Method+" "+r.URL.Path, trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
+			attribute.String("http.request.method", r.Method),
+			attribute.String("url.path", r.URL.Path),
+		))
+		defer span.End()
+		r = r.WithContext(ctx)
 		started := time.Now()
 		rw := &statusWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rw, r)
+		span.SetAttributes(attribute.Int("http.response.status_code", rw.status))
+		if rw.status >= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, http.StatusText(rw.status))
+		}
 		h.metrics.Requests.WithLabelValues(r.Method, r.URL.Path, http.StatusText(rw.status)).Inc()
 		h.metrics.RequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(time.Since(started).Seconds())
 	})

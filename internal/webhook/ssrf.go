@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -27,12 +28,16 @@ func ValidateEndpoint(raw string, resolver func(context.Context, string) ([]net.
 		return ErrBlockedURL
 	}
 	for _, ip := range ips {
-		if isPrivateIP(ip) {
+		if isPrivateIP(ip) && !allowPrivateEndpoints() {
 			return ErrBlockedURL
 		}
 	}
 	return nil
 }
+
+// Private endpoints are only useful for the isolated local E2E receiver. The
+// opt-in is never enabled by the production defaults.
+func allowPrivateEndpoints() bool { return os.Getenv("PULSE_ALLOW_PRIVATE_WEBHOOKS") == "true" }
 
 func isPrivateIP(ip net.IP) bool {
 	if ip == nil {

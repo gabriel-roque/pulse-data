@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/pulse-data/pulse/internal/events"
+	"github.com/pulse-data/pulse/internal/telemetry"
 	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Publisher interface {
@@ -20,14 +25,39 @@ type Producer struct {
 }
 
 func NewProducer(brokers []string, topic string) *Producer {
-	return &Producer{writer: &kafka.Writer{Addr: kafka.TCP(brokers...), Topic: topic, Balancer: &kafka.Hash{}, RequiredAcks: kafka.RequireAll, Async: false}, topic: topic}
+	return &Producer{writer: &kafka.Writer{
+		Addr:         kafka.TCP(brokers...),
+		Topic:        topic,
+		Balancer:     &kafka.Hash{},
+		RequiredAcks: kafka.RequireAll,
+		Async:        false,
+		BatchSize:    100,
+		BatchTimeout: 5 * time.Millisecond,
+	}, topic: topic}
 }
 func (p *Producer) Publish(ctx context.Context, event events.Event) error {
+	ctx, span := telemetry.StartSpan(ctx, "pulse.kafka.publish", trace.WithSpanKind(trace.SpanKindProducer), trace.WithAttributes(
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination.name", p.topic),
+	))
 	b, err := json.Marshal(event)
 	if err != nil {
+		telemetry.EndSpan(span, err)
 		return err
 	}
-	return p.writer.WriteMessages(ctx, kafka.Message{Key: []byte(event.TenantID), Value: b, Headers: []kafka.Header{{Key: "event-id", Value: []byte(event.EventID)}}})
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+	headers := make([]kafka.Header, 0, len(carrier)+1)
+	for key, value := range carrier {
+		headers = append(headers, kafka.Header{Key: key, Value: []byte(value)})
+	}
+	headers = append(headers, kafka.Header{Key: "event-id", Value: []byte(event.EventID)})
+	if err := p.writer.WriteMessages(ctx, kafka.Message{Key: []byte(event.TenantID), Value: b, Headers: headers}); err != nil {
+		telemetry.EndSpan(span, err)
+		return err
+	}
+	span.End()
+	return nil
 }
 func (p *Producer) Close() error { return p.writer.Close() }
 
@@ -36,16 +66,25 @@ type Consumer struct {
 	reader  *kafka.Reader
 	handler ConsumerHandler
 	dlq     *kafka.Writer
+	topic   string
+	group   string
+	metrics *telemetry.Metrics
+	worker  string
 }
 
 func NewConsumer(brokers []string, topic, group string, handler ConsumerHandler) *Consumer {
-	return &Consumer{reader: kafka.NewReader(kafka.ReaderConfig{Brokers: brokers, Topic: topic, GroupID: group, MinBytes: 1, MaxBytes: 10 << 20}), handler: handler}
+	return &Consumer{reader: kafka.NewReader(kafka.ReaderConfig{Brokers: brokers, Topic: topic, GroupID: group, MinBytes: 1, MaxBytes: 10 << 20}), handler: handler, topic: topic, group: group}
 }
 func NewConsumerWithDLQ(brokers []string, topic, group, dlqTopic string, handler ConsumerHandler) *Consumer {
 	c := NewConsumer(brokers, topic, group, handler)
 	c.dlq = &kafka.Writer{Addr: kafka.TCP(brokers...), Topic: dlqTopic, Balancer: &kafka.Hash{}, RequiredAcks: kafka.RequireAll, Async: false}
 	return c
 }
+
+func (c *Consumer) SetMetrics(metrics *telemetry.Metrics, worker string) {
+	c.metrics, c.worker = metrics, worker
+}
+
 func (c *Consumer) Run(ctx context.Context) error {
 	for {
 		msg, err := c.reader.FetchMessage(ctx)
@@ -55,35 +94,77 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 			return err
 		}
-		var event events.Event
-		if err := json.Unmarshal(msg.Value, &event); err != nil {
-			if c.dlq == nil {
-				return fmt.Errorf("decode kafka event: %w", err)
-			}
+		carrier := propagation.MapCarrier{}
+		for _, header := range msg.Headers {
+			carrier[header.Key] = string(header.Value)
+		}
+		messageCtx := propagation.TraceContext{}.Extract(ctx, carrier)
+		messageCtx, span := telemetry.StartSpan(messageCtx, "pulse.kafka.process", trace.WithSpanKind(trace.SpanKindConsumer), trace.WithAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.destination.name", c.topic),
+			attribute.String("messaging.consumer.group", c.group),
+		))
+		started := time.Now()
+		processed, processErr := c.processMessage(messageCtx, msg)
+		if processErr != nil {
+			telemetry.EndSpan(span, processErr)
+		} else {
+			span.End()
+		}
+		c.recordProcessing(started, processed, processErr)
+		if processErr != nil {
+			return processErr
+		}
+	}
+}
+
+func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) (bool, error) {
+	var event events.Event
+	if err := json.Unmarshal(msg.Value, &event); err != nil {
+		if c.dlq == nil {
+			return false, fmt.Errorf("decode kafka event: %w", err)
+		}
+		if dlqErr := c.dlq.WriteMessages(ctx, kafka.Message{Key: msg.Key, Value: msg.Value, Headers: append(msg.Headers, kafka.Header{Key: "pulse-error", Value: []byte(err.Error())})}); dlqErr != nil {
+			return false, dlqErr
+		}
+		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
+			return false, commitErr
+		}
+		return false, nil
+	}
+	if err := c.handler(ctx, event); err != nil {
+		var terminal *DeadLetterError
+		if c.dlq != nil && errors.As(err, &terminal) {
 			if dlqErr := c.dlq.WriteMessages(ctx, kafka.Message{Key: msg.Key, Value: msg.Value, Headers: append(msg.Headers, kafka.Header{Key: "pulse-error", Value: []byte(err.Error())})}); dlqErr != nil {
-				return dlqErr
+				return false, dlqErr
 			}
 			if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-				return commitErr
+				return false, commitErr
 			}
-			continue
+			return false, nil
 		}
-		if err := c.handler(ctx, event); err != nil {
-			var terminal *DeadLetterError
-			if c.dlq != nil && errors.As(err, &terminal) {
-				if dlqErr := c.dlq.WriteMessages(ctx, kafka.Message{Key: msg.Key, Value: msg.Value, Headers: append(msg.Headers, kafka.Header{Key: "pulse-error", Value: []byte(err.Error())})}); dlqErr != nil {
-					return dlqErr
-				}
-				if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-					return commitErr
-				}
-				continue
-			}
-			return err
-		}
-		if err := c.reader.CommitMessages(ctx, msg); err != nil {
-			return err
-		}
+		return false, err
+	}
+	if err := c.reader.CommitMessages(ctx, msg); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *Consumer) recordProcessing(started time.Time, processed bool, err error) {
+	if c.metrics == nil {
+		return
+	}
+	worker := c.worker
+	if worker == "" {
+		worker = c.group
+	}
+	c.metrics.ProcessingLatency.WithLabelValues(worker).Observe(time.Since(started).Seconds())
+	if processed {
+		c.metrics.EventsProcessed.WithLabelValues(worker).Inc()
+	}
+	if err != nil {
+		c.metrics.EventsFailed.WithLabelValues("processing").Inc()
 	}
 }
 func (c *Consumer) Close() error {

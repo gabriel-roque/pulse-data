@@ -101,3 +101,29 @@ func (p *Postgres) ListSubscriptions(ctx context.Context, tenantID, eventType st
 	}
 	return out, rows.Err()
 }
+
+func (p *Postgres) ClaimDelivery(ctx context.Context, tenantID, eventID, subscriptionID string) (bool, error) {
+	var claimed int
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO webhook_delivery_claims(tenant_id,event_id,subscription_id,status,lease_until,claimed_at)
+		VALUES($1,$2,$3,'processing',now() + interval '5 minutes',now())
+		ON CONFLICT (tenant_id,event_id,subscription_id) DO UPDATE
+		SET status='processing', lease_until=now() + interval '5 minutes', claimed_at=now(), completed_at=NULL
+		WHERE webhook_delivery_claims.status <> 'completed'
+		  AND (webhook_delivery_claims.lease_until IS NULL OR webhook_delivery_claims.lease_until <= now())
+		RETURNING 1`, tenantID, eventID, subscriptionID).Scan(&claimed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil && claimed == 1, err
+}
+
+func (p *Postgres) CompleteDelivery(ctx context.Context, tenantID, eventID, subscriptionID string) error {
+	_, err := p.pool.Exec(ctx, `UPDATE webhook_delivery_claims SET status='completed', lease_until=NULL, completed_at=now() WHERE tenant_id=$1 AND event_id=$2 AND subscription_id=$3 AND status='processing' AND lease_until > now()`, tenantID, eventID, subscriptionID)
+	return err
+}
+
+func (p *Postgres) ReleaseDelivery(ctx context.Context, tenantID, eventID, subscriptionID string) error {
+	_, err := p.pool.Exec(ctx, `UPDATE webhook_delivery_claims SET status='pending', lease_until=NULL WHERE tenant_id=$1 AND event_id=$2 AND subscription_id=$3 AND status='processing' AND lease_until > now()`, tenantID, eventID, subscriptionID)
+	return err
+}

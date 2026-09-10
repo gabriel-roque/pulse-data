@@ -18,6 +18,8 @@ certification.
 - Webhook requests use HMAC-SHA256 signatures and timestamp/event headers.
 - Webhook URLs are restricted to HTTP(S), reject user info and known/private
   address classes, and use a safe dialer that rechecks resolved addresses.
+  The isolated Compose E2E profile opts into private endpoints only for its
+  local mock; this setting must remain disabled in production.
 - HTTP server timeouts and webhook client timeout bound request duration.
 - Helm defaults request non-root execution, drop Linux capabilities, disable
   privilege escalation, and use a read-only root filesystem.

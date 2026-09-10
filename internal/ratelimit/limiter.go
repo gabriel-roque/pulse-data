@@ -3,46 +3,77 @@ package ratelimit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
 
 var ErrLimited = errors.New("rate limit exceeded")
+var ErrUnavailable = errors.New("rate limiter unavailable")
 
 type Limiter interface {
 	Allow(ctx context.Context, tenantID string) (bool, error)
 }
 
 type Memory struct {
-	mu     sync.Mutex
-	limit  int
-	window time.Duration
-	items  map[string]counter
+	mu    sync.Mutex
+	limit int
+	rate  float64
+	now   func() time.Time
+	items map[string]bucket
 }
-type counter struct {
-	started time.Time
-	count   int
+
+type bucket struct {
+	tokens    float64
+	timestamp time.Time
 }
 
 func NewMemory(limit int, window time.Duration) *Memory {
-	return &Memory{limit: limit, window: window, items: make(map[string]counter)}
+	return NewMemoryWithClock(limit, window, time.Now)
 }
+
+func NewMemoryWithClock(limit int, window time.Duration, now func() time.Time) *Memory {
+	if now == nil {
+		now = time.Now
+	}
+	rate := 0.0
+	if window > 0 {
+		rate = float64(limit) / window.Seconds()
+	}
+	return &Memory{limit: limit, rate: rate, now: now, items: make(map[string]bucket)}
+}
+
 func (m *Memory) Allow(_ context.Context, tenantID string) (bool, error) {
 	if m.limit <= 0 {
 		return true, nil
 	}
-	now := time.Now()
+	if m.rate <= 0 {
+		return false, fmt.Errorf("%w: rate limit window must be positive", ErrUnavailable)
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	c := m.items[tenantID]
-	if c.started.IsZero() || now.Sub(c.started) >= m.window {
-		c = counter{started: now}
+
+	now := m.now()
+	b, ok := m.items[tenantID]
+	if !ok {
+		b = bucket{tokens: float64(m.limit), timestamp: now}
+	} else if now.After(b.timestamp) {
+		b.tokens = min(float64(m.limit), b.tokens+now.Sub(b.timestamp).Seconds()*m.rate)
+		b.timestamp = now
 	}
-	if c.count >= m.limit {
-		m.items[tenantID] = c
+	if b.tokens < 1 {
+		m.items[tenantID] = b
 		return false, nil
 	}
-	c.count++
-	m.items[tenantID] = c
+	b.tokens--
+	m.items[tenantID] = b
 	return true, nil
+}
+
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }

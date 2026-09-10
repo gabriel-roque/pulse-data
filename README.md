@@ -30,6 +30,11 @@ Clients -> ingestion -> Kafka events.raw
 
 Redis provides distributed rate limiting. query-api serves analytics.
 Prometheus, Grafana, Loki, and Tempo provide observability.
+
+Webhook endpoints are resolved and checked against private, loopback, link-local,
+and metadata address ranges on every delivery. `PULSE_ALLOW_PRIVATE_WEBHOOKS=true`
+is reserved for the isolated Compose E2E profile and must not be enabled in
+production.
 ```
 
 The detailed overview and Mermaid diagram are in
@@ -43,6 +48,8 @@ The detailed overview and Mermaid diagram are in
 - Consumers use at-least-once processing and commit offsets after successful
   handling.
 - PostgreSQL enforces uniqueness on `(tenant_id, event_id)`.
+- Webhook claims enforce uniqueness on `(tenant_id, event_id, subscription_id)`
+  before an external side effect is attempted.
 - Terminal consumer failures can be written to `events.dlq`.
 - End-to-end exactly-once processing is not promised.
 - These properties still require the integration, load, and chaos evidence

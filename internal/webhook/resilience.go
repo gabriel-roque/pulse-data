@@ -99,7 +99,7 @@ type Dispatcher struct {
 	client        *http.Client
 	maxRetries    int
 	backoff       []time.Duration
-	breaker       *CircuitBreaker
+	breakers      sync.Map
 	bulkheadLimit int
 	bulkheads     sync.Map
 	now           func() time.Time
@@ -113,7 +113,16 @@ func NewDispatcher(concurrency, maxRetries int, timeout time.Duration) *Dispatch
 	if concurrency < 1 {
 		concurrency = 1
 	}
-	return &Dispatcher{client: &http.Client{Transport: transport, Timeout: timeout}, maxRetries: maxRetries, backoff: []time.Duration{time.Second, 5 * time.Second, 30 * time.Second, 5 * time.Minute, 30 * time.Minute}, breaker: NewCircuitBreaker(3, time.Minute), bulkheadLimit: concurrency, now: time.Now}
+	return &Dispatcher{client: &http.Client{Transport: transport, Timeout: timeout}, maxRetries: maxRetries, backoff: []time.Duration{time.Second, 5 * time.Second, 30 * time.Second, 5 * time.Minute, 30 * time.Minute}, bulkheadLimit: concurrency, now: time.Now}
+}
+
+func (d *Dispatcher) endpointCircuitBreaker(endpoint string) *CircuitBreaker {
+	if value, ok := d.breakers.Load(endpoint); ok {
+		return value.(*CircuitBreaker)
+	}
+	candidate := NewCircuitBreaker(3, time.Minute)
+	actual, _ := d.breakers.LoadOrStore(endpoint, candidate)
+	return actual.(*CircuitBreaker)
 }
 
 func (d *Dispatcher) endpointBulkhead(endpoint string) *Bulkhead {
@@ -131,7 +140,8 @@ func (d *Dispatcher) Deliver(ctx context.Context, delivery Delivery) error {
 	}); err != nil {
 		return err
 	}
-	if !d.breaker.Allow(d.now()) {
+	breaker := d.endpointCircuitBreaker(delivery.Endpoint)
+	if !breaker.Allow(d.now()) {
 		return fmt.Errorf("circuit breaker is open")
 	}
 	bulkhead := d.endpointBulkhead(delivery.Endpoint)
@@ -146,10 +156,10 @@ func (d *Dispatcher) Deliver(ctx context.Context, delivery Delivery) error {
 	for attempt := 0; attempt <= d.maxRetries; attempt++ {
 		err = d.send(ctx, delivery, body)
 		if err == nil {
-			d.breaker.Success()
+			breaker.Success()
 			return nil
 		}
-		d.breaker.Failure(d.now())
+		breaker.Failure(d.now())
 		if attempt == d.maxRetries {
 			break
 		}
@@ -201,7 +211,7 @@ func safeDialer(ctx context.Context, network, address string) (net.Conn, error) 
 		return nil, err
 	}
 	for _, ip := range ips {
-		if isPrivateIP(ip) {
+		if isPrivateIP(ip) && !allowPrivateEndpoints() {
 			continue
 		}
 		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, net.JoinHostPort(ip.String(), port))

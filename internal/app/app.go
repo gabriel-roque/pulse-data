@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/pulse-data/pulse/internal/analytics"
 	"github.com/pulse-data/pulse/internal/api"
 	"github.com/pulse-data/pulse/internal/auth"
@@ -94,6 +95,12 @@ func RunHTTP(service string) error {
 	cfg := platform.Load(service)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing := telemetry.SetupTracing(ctx, service)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(shutdownCtx)
+	}()
 	d, err := setup(ctx, cfg)
 	if err != nil {
 		return err
@@ -138,6 +145,14 @@ func RunWorker(service string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing := telemetry.SetupTracing(ctx, service)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(shutdownCtx)
+	}()
+	reg := prometheus.NewRegistry()
+	metrics := telemetry.NewMetrics(reg)
 	var handler kafka.ConsumerHandler
 	switch service {
 	case "persistence-worker":
@@ -168,13 +183,42 @@ func RunWorker(service string) error {
 			return err
 		}
 		defer p.Close()
-		handler = worker.WebhookHandler{Store: p, Dispatcher: webhook.NewDispatcher(20, 5, 15*time.Second)}.Handle
+		handler = worker.WebhookHandler{Store: p, Dispatcher: webhook.NewDispatcher(20, 5, 15*time.Second), Metrics: metrics}.Handle
 	default:
 		return fmt.Errorf("unknown worker service %q", service)
 	}
 	consumer := kafka.NewConsumerWithDLQ(cfg.KafkaBrokers, cfg.KafkaTopic, service+"s", "events.dlq", handler)
+	consumer.SetMetrics(metrics, service)
 	defer consumer.Close()
-	return consumer.Run(ctx)
+	metricsServer := &http.Server{Addr: cfg.MetricsAddr, Handler: metricsRoutes(reg), ReadHeaderTimeout: 5 * time.Second}
+	metricsErr := make(chan error, 1)
+	go func() {
+		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			metricsErr <- err
+		}
+	}()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = metricsServer.Shutdown(shutdownCtx)
+	}()
+	if err := consumer.Run(ctx); err != nil {
+		return err
+	}
+	select {
+	case err := <-metricsErr:
+		return fmt.Errorf("metrics server: %w", err)
+	default:
+		return nil
+	}
+}
+
+func metricsRoutes(reg prometheus.Gatherer) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/health/live", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	return mux
 }
 
 func Run() error {

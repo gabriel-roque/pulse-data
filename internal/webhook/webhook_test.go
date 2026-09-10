@@ -2,7 +2,10 @@ package webhook
 
 import (
 	"context"
+	"io"
 	"net"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,4 +68,117 @@ func TestBulkheadCancellation(t *testing.T) {
 		t.Fatal("second acquire unexpectedly succeeded")
 	}
 	b.Release()
+}
+
+func TestDispatcherCircuitBreakerIsPerEndpoint(t *testing.T) {
+	t.Setenv("PULSE_ALLOW_PRIVATE_WEBHOOKS", "true")
+
+	const (
+		endpointA = "http://127.0.0.1/a"
+		endpointB = "http://127.0.0.1/b"
+	)
+	var attemptsA, attemptsB int
+	dispatcher := NewDispatcher(1, 2, time.Second)
+	dispatcher.backoff = []time.Duration{time.Microsecond, time.Microsecond, time.Microsecond}
+	dispatcher.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		status := http.StatusOK
+		if req.URL.Path == "/a" {
+			attemptsA++
+			status = http.StatusBadGateway
+		} else {
+			attemptsB++
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})
+	delivery := Delivery{Endpoint: endpointA, Secret: []byte("secret"), Event: events.Event{EventID: "event"}}
+
+	if err := dispatcher.Deliver(context.Background(), delivery); err == nil {
+		t.Fatal("failing endpoint unexpectedly succeeded")
+	}
+	if attemptsA != 3 {
+		t.Fatalf("failing endpoint attempts = %d, want 3", attemptsA)
+	}
+	if err := dispatcher.Deliver(context.Background(), delivery); err == nil {
+		t.Fatal("open circuit unexpectedly allowed endpoint A")
+	}
+	if attemptsA != 3 {
+		t.Fatalf("open circuit sent endpoint A request, got %d attempts", attemptsA)
+	}
+
+	delivery.Endpoint = endpointB
+	if err := dispatcher.Deliver(context.Background(), delivery); err != nil {
+		t.Fatalf("healthy endpoint blocked by endpoint A circuit: %v", err)
+	}
+	if attemptsB != 1 {
+		t.Fatalf("healthy endpoint attempts = %d, want 1", attemptsB)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestMemoryStoreClaimDeliveryIsAtomic(t *testing.T) {
+	store := NewMemoryStore()
+	const attempts = 32
+	claims := make(chan bool, attempts)
+	for range attempts {
+		go func() {
+			claimed, err := store.ClaimDelivery(context.Background(), "tenant", "event", "subscription")
+			if err != nil {
+				t.Errorf("claim delivery: %v", err)
+				return
+			}
+			claims <- claimed
+		}()
+	}
+
+	claimedCount := 0
+	for range attempts {
+		if <-claims {
+			claimedCount++
+		}
+	}
+	if claimedCount != 1 {
+		t.Fatalf("got %d claims, want 1", claimedCount)
+	}
+}
+
+func TestMemoryStoreDeliveryLifecycle(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Now()
+	store.now = func() time.Time { return now }
+
+	claimed, err := store.ClaimDelivery(context.Background(), "tenant", "event", "subscription")
+	if err != nil || !claimed {
+		t.Fatalf("initial claim = %v, %v; want true, nil", claimed, err)
+	}
+	claimed, err = store.ClaimDelivery(context.Background(), "tenant", "event", "subscription")
+	if err != nil || claimed {
+		t.Fatalf("active lease claim = %v, %v; want false, nil", claimed, err)
+	}
+	if err := store.ReleaseDelivery(context.Background(), "tenant", "event", "subscription"); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = store.ClaimDelivery(context.Background(), "tenant", "event", "subscription")
+	if err != nil || !claimed {
+		t.Fatalf("released claim = %v, %v; want true, nil", claimed, err)
+	}
+	if err := store.CompleteDelivery(context.Background(), "tenant", "event", "subscription"); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = store.ClaimDelivery(context.Background(), "tenant", "event", "subscription")
+	if err != nil || claimed {
+		t.Fatalf("completed claim = %v, %v; want false, nil", claimed, err)
+	}
+
+	claimed, err = store.ClaimDelivery(context.Background(), "tenant", "expired", "subscription")
+	if err != nil || !claimed {
+		t.Fatalf("expiry setup claim = %v, %v; want true, nil", claimed, err)
+	}
+	now = now.Add(deliveryLease + time.Second)
+	claimed, err = store.ClaimDelivery(context.Background(), "tenant", "expired", "subscription")
+	if err != nil || !claimed {
+		t.Fatalf("expired lease claim = %v, %v; want true, nil", claimed, err)
+	}
 }
