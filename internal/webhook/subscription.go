@@ -64,7 +64,8 @@ const (
 	deliveryPending    = "pending"
 	deliveryProcessing = "processing"
 	deliveryCompleted  = "completed"
-	deliveryLease      = 5 * time.Minute
+	// The lease must outlive the complete retry schedule in resilience.go.
+	deliveryLease = time.Hour
 )
 
 func NewMemoryStore() *MemoryStore {

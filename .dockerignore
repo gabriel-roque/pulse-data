@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+
+README.md
+docs/
+tests/
+observability/
+deployments/helm/
+*.md
+*.log
+bin/
+coverage.out

@@ -28,13 +28,13 @@ func TestSignatureAndReplayProtection(t *testing.T) {
 }
 func TestSSRFPolicy(t *testing.T) {
 	resolver := func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("10.0.0.1")}, nil }
-	if err := ValidateEndpoint("https://example.test/hook", resolver); err == nil {
+	if err := ValidateEndpoint(context.Background(), "https://example.test/hook", resolver); err == nil {
 		t.Fatal("private target accepted")
 	}
-	if err := ValidateEndpoint("file:///etc/passwd", resolver); err == nil {
+	if err := ValidateEndpoint(context.Background(), "file:///etc/passwd", resolver); err == nil {
 		t.Fatal("invalid scheme accepted")
 	}
-	if err := ValidateEndpoint("https://example.test/hook", func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("8.8.8.8")}, nil }); err != nil {
+	if err := ValidateEndpoint(context.Background(), "https://example.test/hook", func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("8.8.8.8")}, nil }); err != nil {
 		t.Fatal(err)
 	}
 }

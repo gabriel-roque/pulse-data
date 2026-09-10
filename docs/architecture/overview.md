@@ -54,8 +54,8 @@ ClickHouse, and webhooks.
 
 - Kafka publish failure produces `503` and no accepted response.
 - Redis failure produces `503`; the current API does not fail open.
-- A worker error stops its consumer loop unless the error is explicitly
-  terminal and routed to the DLQ.
+- Consumer fetch and processing failures are retried with bounded backoff;
+  terminal malformed messages are routed to the DLQ.
 - Webhook delivery has a per-endpoint bulkhead, retry backoff, circuit breaker,
   timeout, HMAC headers, and SSRF checks.
 - HTTP services shut down on SIGINT/SIGTERM with a bounded 10-second HTTP

@@ -7,7 +7,7 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 require_cmd k6
 require_cmd curl
 require_env PULSE_API_URL
-require_env PULSE_API_KEY
+[ -n "${PULSE_API_KEY:-}${PULSE_API_KEYS:-}" ] || test_die "required environment variable is missing: PULSE_API_KEY or PULSE_API_KEYS"
 
 profile=${1:-}
 case "$profile" in

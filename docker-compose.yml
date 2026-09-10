@@ -23,11 +23,12 @@ x-pulse-image: &pulse-image
 services:
   ingestion:
     <<: *pulse-image
+    restart: unless-stopped
     environment:
       <<: *pulse-environment
       PULSE_SERVICE: ingestion
     ports:
-      - "${PULSE_INGESTION_PORT:-8080}:8080"
+      - "127.0.0.1:${PULSE_INGESTION_PORT:-8080}:8080"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -46,11 +47,12 @@ services:
 
   query-api:
     <<: *pulse-image
+    restart: unless-stopped
     environment:
       <<: *pulse-environment
       PULSE_SERVICE: query-api
     ports:
-      - "${PULSE_QUERY_PORT:-8081}:8080"
+      - "127.0.0.1:${PULSE_QUERY_PORT:-8081}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,6 +69,7 @@ services:
 
   persistence-worker:
     <<: *pulse-image
+    restart: unless-stopped
     environment:
       <<: *pulse-environment
       PULSE_SERVICE: persistence-worker
@@ -84,6 +87,7 @@ services:
 
   analytics-worker:
     <<: *pulse-image
+    restart: unless-stopped
     environment:
       <<: *pulse-environment
       PULSE_SERVICE: analytics-worker
@@ -101,6 +105,7 @@ services:
 
   webhook-worker:
     <<: *pulse-image
+    restart: unless-stopped
     environment:
       <<: *pulse-environment
       PULSE_SERVICE: webhook-worker
@@ -130,6 +135,7 @@ services:
 
   kafka:
     image: apache/kafka:3.9.0
+    restart: unless-stopped
     hostname: kafka
     environment:
       KAFKA_NODE_ID: 1
@@ -157,6 +163,7 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pulse}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local}
@@ -172,6 +179,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -183,6 +191,7 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:25.3-alpine
+    restart: unless-stopped
     environment:
       CLICKHOUSE_DB: ${PULSE_CLICKHOUSE_DATABASE:-default}
       CLICKHOUSE_USER: default
@@ -192,7 +201,7 @@ services:
       - ./migrations/002_clickhouse.sql:/docker-entrypoint-initdb.d/002_clickhouse.sql:ro
       - ./deployments/docker/clickhouse/z-pulse.xml:/etc/clickhouse-server/users.d/z-pulse.xml:ro
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8123/ping"]
       interval: 5s
@@ -202,6 +211,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.5.0
+    restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -210,7 +220,7 @@ services:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
       ingestion:
         condition: service_healthy
@@ -224,12 +234,13 @@ services:
 
   loki:
     image: grafana/loki:3.5.0
+    restart: unless-stopped
     command: ["-config.file=/etc/loki/config.yml"]
     volumes:
       - ./observability/loki/config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
     ports:
-      - "${LOKI_PORT:-3100}:3100"
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3100/ready"]
       interval: 10s
@@ -239,14 +250,15 @@ services:
 
   tempo:
     image: grafana/tempo:2.7.2
+    restart: unless-stopped
     command: ["-config.file=/etc/tempo/tempo.yml"]
     volumes:
       - ./observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
       - tempo-data:/var/tempo
     ports:
-      - "${TEMPO_PORT:-3200}:3200"
-      - "4317:4317"
-      - "4318:4318"
+      - "127.0.0.1:${TEMPO_PORT:-3200}:3200"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3200/ready"]
       interval: 10s
@@ -256,6 +268,7 @@ services:
 
   grafana:
     image: grafana/grafana:12.1.1
+    restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-grafana}
@@ -265,7 +278,7 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     depends_on:
       prometheus:
         condition: service_healthy
@@ -283,11 +296,12 @@ services:
   webhook-mock:
     image: python:3.13-alpine
     profiles: [e2e]
+    restart: unless-stopped
     command: ["python", "/webhook_mock.py", "--host", "0.0.0.0", "--port", "8090"]
     volumes:
       - ./tests/e2e/webhook_mock.py:/webhook_mock.py:ro
     ports:
-      - "${PULSE_WEBHOOK_MOCK_PORT:-8090}:8090"
+      - "127.0.0.1:${PULSE_WEBHOOK_MOCK_PORT:-8090}:8090"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"]
       interval: 5s

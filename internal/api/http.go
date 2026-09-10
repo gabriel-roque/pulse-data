@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -37,11 +38,14 @@ type Handler struct {
 	adminToken  string
 	webhooks    webhook.Store
 	metricsHTTP http.Handler
+	readyCheck  func(context.Context) error
 }
 
 func NewHandler(store auth.Store, publisher Publisher, limiter ratelimit.Limiter, metrics *telemetry.Metrics, maxPayload int, durability, adminToken string, analytical analytics.Store, webhooks webhook.Store, registry prometheus.Gatherer) *Handler {
 	return &Handler{auth: store, publisher: publisher, limiter: limiter, metrics: metrics, maxPayload: maxPayload, durability: durability, analytics: analytical, adminToken: adminToken, webhooks: webhooks, metricsHTTP: promhttp.HandlerFor(registry, promhttp.HandlerOpts{})}
 }
+
+func (h *Handler) SetReadyCheck(check func(context.Context) error) { h.readyCheck = check }
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -49,6 +53,14 @@ func (h *Handler) Routes() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, _ *http.Request) {
+		if h.readyCheck != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := h.readyCheck(ctx); err != nil {
+				h.fail(w, http.StatusServiceUnavailable, "dependencies are not ready")
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 	mux.Handle("GET /metrics", h.metricsHTTP)
@@ -72,15 +84,21 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !allowed {
-			h.metrics.RateLimitRejected.WithLabelValues(tenant.ID).Inc()
+			h.metrics.RateLimitRejected.WithLabelValues().Inc()
 			h.fail(w, http.StatusTooManyRequests, "rate limit exceeded")
 			return
 		}
 	}
 	reader := http.MaxBytesReader(w, r.Body, int64(h.maxPayload)+4096)
 	defer r.Body.Close()
+	decoder := json.NewDecoder(reader)
 	var raw json.RawMessage
-	if err := json.NewDecoder(reader).Decode(&raw); err != nil {
+	if err := decoder.Decode(&raw); err != nil {
+		h.fail(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
 		h.fail(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -98,7 +116,7 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	h.metrics.KafkaPublishLatency.WithLabelValues("events.raw").Observe(time.Since(publishStarted).Seconds())
 	h.metrics.Published.WithLabelValues("events.raw").Inc()
-	h.metrics.EventsReceived.WithLabelValues(tenant.ID).Inc()
+	h.metrics.EventsReceived.WithLabelValues().Inc()
 	w.Header().Set("X-Pulse-Durability", h.durability)
 	writeJSON(w, http.StatusAccepted, map[string]string{"eventId": event.EventID, "status": "accepted"})
 }
@@ -126,6 +144,11 @@ func (h *Handler) createTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in) != nil {
 		h.fail(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" || len(in.Name) > 200 {
+		h.fail(w, http.StatusBadRequest, "name must be between 1 and 200 characters")
 		return
 	}
 	t, key, err := h.auth.Create(r.Context(), in.Name)
@@ -189,7 +212,13 @@ func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, http.StatusBadRequest, "from must be before to")
 		return
 	}
-	rows, err := h.analytics.Summary(r.Context(), tenant.ID, r.URL.Query().Get("type"), from, to)
+	if to.Sub(from) > 31*24*time.Hour {
+		h.fail(w, http.StatusBadRequest, "analytics range cannot exceed 31 days")
+		return
+	}
+	queryCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	rows, err := h.analytics.Summary(queryCtx, tenant.ID, r.URL.Query().Get("type"), from, to)
 	if err != nil {
 		h.fail(w, http.StatusServiceUnavailable, "analytics unavailable")
 		return
@@ -213,7 +242,7 @@ func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, http.StatusBadRequest, "eventType and endpoint are required")
 		return
 	}
-	if err := webhook.ValidateEndpoint(in.Endpoint, func(ctx context.Context, host string) ([]net.IP, error) {
+	if err := webhook.ValidateEndpoint(r.Context(), in.Endpoint, func(ctx context.Context, host string) ([]net.IP, error) {
 		return net.DefaultResolver.LookupIP(ctx, "ip", host)
 	}); err != nil {
 		h.fail(w, http.StatusBadRequest, "endpoint rejected by SSRF policy")
@@ -252,8 +281,12 @@ func (h *Handler) instrument(next http.Handler) http.Handler {
 		if rw.status >= http.StatusInternalServerError {
 			span.SetStatus(codes.Error, http.StatusText(rw.status))
 		}
-		h.metrics.Requests.WithLabelValues(r.Method, r.URL.Path, http.StatusText(rw.status)).Inc()
-		h.metrics.RequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(time.Since(started).Seconds())
+		route := r.Pattern
+		if route == "" {
+			route = "unknown"
+		}
+		h.metrics.Requests.WithLabelValues(r.Method, route, http.StatusText(rw.status)).Inc()
+		h.metrics.RequestDuration.WithLabelValues(r.Method, route).Observe(time.Since(started).Seconds())
 	})
 }
 

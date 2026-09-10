@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -81,6 +82,39 @@ func TestTenantCreationAndRotation(t *testing.T) {
 	}
 	if _, err := store.Authenticate(context.Background(), created.APIKey); err == nil {
 		t.Fatal("old key accepted after rotation")
+	}
+}
+
+func TestIngestRejectsMultipleJSONValues(t *testing.T) {
+	srv, store, _ := testServer(t)
+	defer srv.Close()
+	_, key, err := store.Create(context.Background(), "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewBuffer(append(validEventBody(), []byte(` {"extra":true}`)...)))
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Config.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want %d", res.Code, http.StatusBadRequest)
+	}
+}
+
+func TestReadinessReturnsServiceUnavailableWhenCheckFails(t *testing.T) {
+	srv, _, _ := testServer(t)
+	defer srv.Close()
+	// Rebuild the handler is unnecessary; the route is tested through a small
+	// dedicated handler so the readiness contract stays independent of stores.
+	reg := prometheus.NewRegistry()
+	metrics := telemetry.NewMetrics(reg)
+	h := NewHandler(auth.NewMemoryStore(), &testPublisher{}, ratelimit.NewMemory(10, time.Minute), metrics, 1024, "test", "admin", nil, webhook.NewMemoryStore(), reg)
+	h.SetReadyCheck(func(context.Context) error { return errors.New("dependency unavailable") })
+	res := httptest.NewRecorder()
+	h.Routes().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want %d", res.Code, http.StatusServiceUnavailable)
 	}
 }
 func validEventBody() []byte {

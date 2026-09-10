@@ -66,15 +66,19 @@ The detailed overview and Mermaid diagram are in
 
 ## Quick start
 
-Requirements: Go, Docker Compose, `curl`; `k6`, Helm, `promtool`, and
-`govulncheck` are required only for the targets that use them.
+Requirements for the quick start: Docker Compose v2, `curl`, and `jq`; Go is
+needed for the local code-quality targets. The single command below
+creates `.env` when needed, builds and starts the full local stack (including
+the isolated E2E webhook receiver), waits for readiness, and runs the real E2E
+validation. Services remain running after the script finishes.
 
 ```sh
-cp .env.example .env
-make up
-make e2e
-make down
+./scripts/quick-start.sh
 ```
+
+The local defaults bind published ports to `127.0.0.1`. They are development
+credentials only; replace them before using any shared environment. To stop
+the stack, run `make down`; to remove volumes as well, run `make clean`.
 
 For a clean local environment, use `make clean` before `make up`. Do not use
 the local fallback as production evidence; it is intended for local ingestion
@@ -85,6 +89,7 @@ tests only.
 | Target | Purpose |
 | --- | --- |
 | `make up` | Build and start the Compose stack. |
+| `make quick-start` | Start the full local stack and run E2E validation. |
 | `make down` | Stop the Compose stack without removing volumes. |
 | `make clean` | Stop the stack and remove volumes/orphans. |
 | `make fmt` | Fail if Go formatting would change files. |
@@ -94,8 +99,9 @@ tests only.
 | `make race` | Run `go test -race ./...`. |
 | `make build` | Build all commands under `cmd/`. |
 | `make integration` | Start Compose and run Go integration coverage. |
-| `make e2e` | Wait for readiness and validate HTTP health endpoints. |
+| `make e2e` | Run the real tenant, Kafka, persistence, analytics, and webhook E2E flow. |
 | `make load-smoke` | Run the configured k6 smoke script. |
+| `make stress-test` | Run the k6 stress profile after readiness validation. |
 | `make validate` | Validate Compose, Helm when installed, and Prometheus when installed. |
 | `make scan` | Run `govulncheck ./...`. |
 
@@ -105,12 +111,19 @@ commands are documented in `tests/integration/README.md`,
 
 ## Load and chaos execution
 
-Load profiles require a reachable ingestion URL and API key:
+Load profiles require a reachable ingestion URL and API key(s). The stress
+wrapper provisions 16 local tenants when no key is supplied, avoiding the
+single-tenant rate-limit bottleneck. Set `PULSE_STRESS_TENANTS` to change that
+number, or provide a comma-separated `PULSE_API_KEYS` value explicitly.
 
 ```sh
-PULSE_API_URL=http://127.0.0.1:8080 PULSE_API_KEY=... scripts/run-k6.sh smoke
-PULSE_API_URL=http://127.0.0.1:8080 PULSE_API_KEY=... scripts/run-k6.sh baseline
+./scripts/stress-test.sh
 ```
+
+The stress profile ramps to 100,000 requests/s and is expected to expose
+saturation on a bounded local machine. It is not a claim that Pulse sustains
+that rate. Use `PULSE_API_URL`, `PULSE_API_KEY`/`PULSE_API_KEYS`, and
+`PULSE_STRESS_TENANTS` to target a prepared environment.
 
 The progression, stress, spike, and soak profiles are described in
 [`docs/benchmarks/README.md`](docs/benchmarks/README.md). Chaos is destructive
@@ -133,6 +146,7 @@ health, and metrics routes.
 - Security considerations: [`docs/security.md`](docs/security.md)
 - Chaos report: [`docs/chaos-report.md`](docs/chaos-report.md)
 - Architecture decisions: [`docs/adr/`](docs/adr/)
+- Code review and remaining risks: [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md)
 
 ## Validation and remaining evidence
 
@@ -141,15 +155,12 @@ Run the plan's validation sequence and record its output in
 [`docs/FINAL_VALIDATION_REPORT.md`](docs/FINAL_VALIDATION_REPORT.md):
 
 ```sh
-make clean
-make up
+./scripts/quick-start.sh
 make lint
 make test
 make race
-make integration
-make e2e
-make load-smoke
 make validate
+./scripts/stress-test.sh
 ```
 
 The report must be updated with the tested commit, date, hardware, versions,

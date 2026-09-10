@@ -22,10 +22,17 @@ type ClickHouse struct{ conn clickhouse.Conn }
 func NewClickHouse(addr, database string) (ClickHouse, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{Addr: []string{addr}, Auth: clickhouse.Auth{Database: database}})
 	if err == nil {
-		err = conn.Ping(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = conn.Ping(ctx)
+		cancel()
+		if err != nil {
+			_ = conn.Close()
+		}
 	}
 	return ClickHouse{conn: conn}, err
 }
+func (c ClickHouse) Close() error                    { return c.conn.Close() }
+func (c ClickHouse) Ready(ctx context.Context) error { return c.conn.Ping(ctx) }
 func (c ClickHouse) Record(ctx context.Context, e events.Event) error {
 	return c.conn.Exec(ctx, `INSERT INTO events (tenant_id,event_id,event_type,event_timestamp,payload) VALUES (?, ?, ?, ?, ?)`, e.TenantID, e.EventID, e.Type, e.Timestamp, e.Payload)
 }

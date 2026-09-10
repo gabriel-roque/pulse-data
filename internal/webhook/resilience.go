@@ -135,7 +135,7 @@ func (d *Dispatcher) endpointBulkhead(endpoint string) *Bulkhead {
 }
 
 func (d *Dispatcher) Deliver(ctx context.Context, delivery Delivery) error {
-	if err := ValidateEndpoint(delivery.Endpoint, func(ctx context.Context, host string) ([]net.IP, error) {
+	if err := ValidateEndpoint(ctx, delivery.Endpoint, func(ctx context.Context, host string) ([]net.IP, error) {
 		return net.DefaultResolver.LookupIP(ctx, "ip", host)
 	}); err != nil {
 		return err

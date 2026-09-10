@@ -29,7 +29,8 @@ func NewPostgres(ctx context.Context, dsn string) (*Postgres, error) {
 	}
 	return &Postgres{pool: p}, nil
 }
-func (p *Postgres) Close() { p.pool.Close() }
+func (p *Postgres) Close()                          { p.pool.Close() }
+func (p *Postgres) Ready(ctx context.Context) error { return p.pool.Ping(ctx) }
 
 func (p *Postgres) Create(ctx context.Context, name string) (auth.Tenant, string, error) {
 	key, err := auth.NewAPIKey()
@@ -106,9 +107,9 @@ func (p *Postgres) ClaimDelivery(ctx context.Context, tenantID, eventID, subscri
 	var claimed int
 	err := p.pool.QueryRow(ctx, `
 		INSERT INTO webhook_delivery_claims(tenant_id,event_id,subscription_id,status,lease_until,claimed_at)
-		VALUES($1,$2,$3,'processing',now() + interval '5 minutes',now())
+		VALUES($1,$2,$3,'processing',now() + interval '1 hour',now())
 		ON CONFLICT (tenant_id,event_id,subscription_id) DO UPDATE
-		SET status='processing', lease_until=now() + interval '5 minutes', claimed_at=now(), completed_at=NULL
+		SET status='processing', lease_until=now() + interval '1 hour', claimed_at=now(), completed_at=NULL
 		WHERE webhook_delivery_claims.status <> 'completed'
 		  AND (webhook_delivery_claims.lease_until IS NULL OR webhook_delivery_claims.lease_until <= now())
 		RETURNING 1`, tenantID, eventID, subscriptionID).Scan(&claimed)

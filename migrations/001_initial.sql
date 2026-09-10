@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 200),
     api_key_hash BYTEA NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

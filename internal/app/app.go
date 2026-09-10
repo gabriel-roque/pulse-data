@@ -32,17 +32,28 @@ type dependencies struct {
 	postgres  *persistence.Postgres
 	analytics analytics.Store
 	close     func()
+	ready     func(context.Context) error
 }
 
 func setup(ctx context.Context, cfg platform.Config) (dependencies, error) {
 	var d dependencies
 	d.close = func() {}
+	var checks []func(context.Context) error
+	d.ready = func(ctx context.Context) error {
+		for _, check := range checks {
+			if err := check(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if cfg.PostgresDSN != "" {
 		p, err := persistence.NewPostgres(ctx, cfg.PostgresDSN)
 		if err != nil {
 			return d, fmt.Errorf("postgres: %w", err)
 		}
 		d.postgres, d.store = p, p
+		checks = append(checks, p.Ready)
 		d.close = p.Close
 	} else if cfg.LocalFallback {
 		d.store = auth.NewMemoryStore()
@@ -52,6 +63,7 @@ func setup(ctx context.Context, cfg platform.Config) (dependencies, error) {
 	if len(cfg.KafkaBrokers) > 0 {
 		p := kafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaTopic)
 		d.publisher = p
+		checks = append(checks, p.Ready)
 		oldClose := d.close
 		d.close = func() { _ = p.Close(); oldClose() }
 	} else if cfg.LocalFallback {
@@ -72,6 +84,7 @@ func setup(ctx context.Context, cfg platform.Config) (dependencies, error) {
 			return d, fmt.Errorf("redis: %w", err)
 		}
 		d.limiter = ratelimit.NewRedis(client, cfg.RateLimit, cfg.RateWindow)
+		checks = append(checks, func(ctx context.Context) error { return client.Ping(ctx).Err() })
 		oldClose := d.close
 		d.close = func() { _ = client.Close(); oldClose() }
 	} else if cfg.LocalFallback {
@@ -87,6 +100,9 @@ func setup(ctx context.Context, cfg platform.Config) (dependencies, error) {
 			return d, err
 		}
 		d.analytics = c
+		checks = append(checks, c.Ready)
+		oldClose := d.close
+		d.close = func() { _ = c.Close(); oldClose() }
 	}
 	return d, nil
 }
@@ -115,6 +131,7 @@ func RunHTTP(service string) error {
 		webhooks = webhook.NewMemoryStore()
 	}
 	h := api.NewHandler(d.store, d.publisher, d.limiter, metrics, cfg.MaxPayloadBytes, durability(cfg), cfg.AdminToken, d.analytics, webhooks, reg)
+	h.SetReadyCheck(d.ready)
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: h.Routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -164,7 +181,7 @@ func RunWorker(service string) error {
 			return err
 		}
 		defer p.Close()
-		handler = worker.PersistenceHandler{Store: p}.Handle
+		handler = worker.PersistenceHandler{Store: p, Metrics: metrics}.Handle
 	case "analytics-worker":
 		if cfg.ClickHouseAddr == "" {
 			return errors.New("PULSE_CLICKHOUSE_ADDR is required")
@@ -173,6 +190,7 @@ func RunWorker(service string) error {
 		if err != nil {
 			return err
 		}
+		defer c.Close()
 		handler = worker.AnalyticsHandler{Store: c}.Handle
 	case "webhook-worker":
 		if cfg.PostgresDSN == "" {

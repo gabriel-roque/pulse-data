@@ -20,8 +20,9 @@ type Publisher interface {
 }
 
 type Producer struct {
-	writer *kafka.Writer
-	topic  string
+	writer  *kafka.Writer
+	topic   string
+	brokers []string
 }
 
 func NewProducer(brokers []string, topic string) *Producer {
@@ -33,7 +34,19 @@ func NewProducer(brokers []string, topic string) *Producer {
 		Async:        false,
 		BatchSize:    100,
 		BatchTimeout: 5 * time.Millisecond,
-	}, topic: topic}
+	}, topic: topic, brokers: brokers}
+}
+
+func (p *Producer) Ready(ctx context.Context) error {
+	if len(p.brokers) == 0 {
+		return errors.New("kafka brokers are not configured")
+	}
+	dialer := &kafka.Dialer{Timeout: 3 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", p.brokers[0])
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 func (p *Producer) Publish(ctx context.Context, event events.Event) error {
 	ctx, span := telemetry.StartSpan(ctx, "pulse.kafka.publish", trace.WithSpanKind(trace.SpanKindProducer), trace.WithAttributes(
@@ -86,13 +99,20 @@ func (c *Consumer) SetMetrics(metrics *telemetry.Metrics, worker string) {
 }
 
 func (c *Consumer) Run(ctx context.Context) error {
+	backoff := time.Second
 	for {
 		msg, err := c.reader.FetchMessage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return err
+			if err := wait(ctx, backoff); err != nil {
+				return nil
+			}
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
 		}
 		carrier := propagation.MapCarrier{}
 		for _, header := range msg.Headers {
@@ -113,24 +133,25 @@ func (c *Consumer) Run(ctx context.Context) error {
 		}
 		c.recordProcessing(started, processed, processErr)
 		if processErr != nil {
-			return processErr
+			if err := wait(ctx, backoff); err != nil {
+				return nil
+			}
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
 		}
+		backoff = time.Second
 	}
 }
 
 func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) (bool, error) {
 	var event events.Event
 	if err := json.Unmarshal(msg.Value, &event); err != nil {
-		if c.dlq == nil {
-			return false, fmt.Errorf("decode kafka event: %w", err)
-		}
-		if dlqErr := c.dlq.WriteMessages(ctx, kafka.Message{Key: msg.Key, Value: msg.Value, Headers: append(msg.Headers, kafka.Header{Key: "pulse-error", Value: []byte(err.Error())})}); dlqErr != nil {
-			return false, dlqErr
-		}
-		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-			return false, commitErr
-		}
-		return false, nil
+		return false, c.deadLetter(ctx, msg, fmt.Errorf("decode kafka event: %w", err))
+	}
+	if err := event.Validate(0); err != nil {
+		return false, c.deadLetter(ctx, msg, fmt.Errorf("validate kafka event: %w", err))
 	}
 	if err := c.handler(ctx, event); err != nil {
 		var terminal *DeadLetterError
@@ -149,6 +170,27 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) (bool,
 		return false, err
 	}
 	return true, nil
+}
+
+func (c *Consumer) deadLetter(ctx context.Context, msg kafka.Message, cause error) error {
+	if c.dlq == nil {
+		return cause
+	}
+	if err := c.dlq.WriteMessages(ctx, kafka.Message{Key: msg.Key, Value: msg.Value, Headers: append(msg.Headers, kafka.Header{Key: "pulse-error", Value: []byte(cause.Error())})}); err != nil {
+		return err
+	}
+	return c.reader.CommitMessages(ctx, msg)
+}
+
+func wait(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (c *Consumer) recordProcessing(started time.Time, processed bool, err error) {

@@ -5,10 +5,16 @@ COMPOSE := docker compose
 IMAGE ?= pulse:local
 LOAD_TEST ?= tests/load/smoke.js
 
-.PHONY: up down clean test race integration e2e load-smoke validate lint build fmt vet scan
+.PHONY: up down clean quick-start stress-test test race integration e2e load-smoke validate lint build fmt vet scan
 
 up:
 	$(COMPOSE) up -d --build
+
+quick-start:
+	./scripts/quick-start.sh
+
+stress-test:
+	./scripts/stress-test.sh
 
 down:
 	$(COMPOSE) down
@@ -49,6 +55,8 @@ load-smoke: up
 	@test -f "$(LOAD_TEST)" || { echo "load test not found: $(LOAD_TEST)" >&2; exit 1; }
 	command -v k6 >/dev/null || { echo "k6 is required for load-smoke" >&2; exit 1; }
 	api_key=$${PULSE_API_KEY:-$${PULSE_LOAD_API_KEY:-}}; \
+	$(COMPOSE) ps --status running >/dev/null; \
+	for i in $$(seq 1 120); do curl --silent --show-error --fail "http://127.0.0.1:$${PULSE_INGESTION_PORT:-8080}/health/ready" >/dev/null && break; sleep 1; done; \
 	if [ -z "$$api_key" ]; then \
 		command -v curl >/dev/null && command -v jq >/dev/null || { echo "curl and jq are required to provision a smoke tenant" >&2; exit 1; }; \
 		api_key=$$(curl --fail --silent --show-error -H "X-Admin-Token: $${PULSE_ADMIN_TOKEN:-change-me-admin}" -H 'Content-Type: application/json' --data '{"name":"make-load-smoke"}' "http://127.0.0.1:$${PULSE_INGESTION_PORT:-8080}/v1/tenants" | jq -er .apiKey); \

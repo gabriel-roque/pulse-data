@@ -11,7 +11,7 @@ import (
 
 var ErrBlockedURL = errors.New("webhook endpoint blocked by SSRF policy")
 
-func ValidateEndpoint(raw string, resolver func(context.Context, string) ([]net.IP, error)) error {
+func ValidateEndpoint(ctx context.Context, raw string, resolver func(context.Context, string) ([]net.IP, error)) error {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
 		return ErrBlockedURL
@@ -23,7 +23,10 @@ func ValidateEndpoint(raw string, resolver func(context.Context, string) ([]net.
 	if host == "localhost" || host == "metadata.google.internal" {
 		return ErrBlockedURL
 	}
-	ips, err := resolver(context.Background(), host)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ips, err := resolver(ctx, host)
 	if err != nil || len(ips) == 0 {
 		return ErrBlockedURL
 	}

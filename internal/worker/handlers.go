@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/pulse-data/pulse/internal/analytics"
@@ -14,14 +15,22 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type PersistenceHandler struct{ Store persistence.EventStore }
+type PersistenceHandler struct {
+	Store   persistence.EventStore
+	Metrics *telemetry.Metrics
+}
 
 func (h PersistenceHandler) Handle(ctx context.Context, event events.Event) error {
 	ctx, span := telemetry.StartSpan(ctx, "pulse.persistence.save_event", trace.WithAttributes(
 		attribute.String("db.system", "postgresql"),
 		attribute.String("pulse.event_id", event.EventID),
 	))
-	_, err := h.Store.SaveEvent(ctx, event)
+	inserted, err := h.Store.SaveEvent(ctx, event)
+	if err == nil && !inserted && h.Metrics != nil {
+		// Duplicate deliveries are expected with at-least-once Kafka processing.
+		// Keep the signal aggregate-only to avoid tenant cardinality in metrics.
+		h.Metrics.EventsDuplicate.WithLabelValues().Inc()
+	}
 	telemetry.EndSpan(span, err)
 	return err
 }
@@ -56,6 +65,7 @@ func (h WebhookHandler) Handle(ctx context.Context, event events.Event) error {
 	if err != nil {
 		return err
 	}
+	var failures []error
 	for _, sub := range subs {
 		claimCtx, claimSpan := telemetry.StartSpan(ctx, "pulse.webhook.claim_delivery", trace.WithAttributes(
 			attribute.String("pulse.subscription_id", sub.ID),
@@ -85,17 +95,22 @@ func (h WebhookHandler) Handle(ctx context.Context, event events.Event) error {
 		}
 		if err != nil {
 			if h.Metrics != nil {
-				h.Metrics.WebhookRetry.WithLabelValues(event.TenantID).Inc()
-				h.Metrics.WebhookDLQ.WithLabelValues(event.TenantID).Inc()
+				h.Metrics.WebhookRetry.WithLabelValues().Inc()
+				h.Metrics.WebhookDLQ.WithLabelValues().Inc()
 			}
 			if releaseErr := h.Store.ReleaseDelivery(ctx, event.TenantID, event.EventID, sub.ID); releaseErr != nil {
-				return fmt.Errorf("release delivery claim for subscription %s: %w", sub.ID, releaseErr)
+				failures = append(failures, fmt.Errorf("release delivery claim for subscription %s: %w", sub.ID, releaseErr))
+				continue
 			}
-			return &kafka.DeadLetterError{Err: fmt.Errorf("subscription %s: %w", sub.ID, err)}
+			failures = append(failures, fmt.Errorf("subscription %s: %w", sub.ID, err))
+			continue
 		}
 		if err := h.Store.CompleteDelivery(ctx, event.TenantID, event.EventID, sub.ID); err != nil {
-			return fmt.Errorf("complete delivery for subscription %s: %w", sub.ID, err)
+			failures = append(failures, fmt.Errorf("complete delivery for subscription %s: %w", sub.ID, err))
 		}
+	}
+	if len(failures) > 0 {
+		return &kafka.DeadLetterError{Err: errors.Join(failures...)}
 	}
 	return nil
 }
