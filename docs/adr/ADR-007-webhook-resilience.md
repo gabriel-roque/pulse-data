@@ -1,6 +1,6 @@
 # ADR-007: Webhook Resilience
 ## Status
-Accepted for the current implementation; failure-matrix validation pending.
+Accepted for the current implementation; the full failure matrix is outside this release.
 ## Contexto
 External endpoints are slow, unreliable, and outside Pulse's transaction boundary. One bad endpoint must not block every endpoint.
 ## Drivers
@@ -21,4 +21,4 @@ Use a 15-second HTTP timeout, per-endpoint bulkhead limit 20, circuit breaker af
 - Retries can produce repeated external attempts and do not guarantee exactly-once effects.
 - Per-endpoint state can grow with the number of subscriptions and needs lifecycle controls.
 ## Evidências / benchmarks
-Implementation evidence: `internal/webhook/resilience.go`, `hmac.go`, and `ssrf.go`. Bulkhead, breaker, retry, timeout, SSRF, and DLQ scenario results: **PENDING**.
+Implementation evidence: `internal/webhook/resilience.go`, `hmac.go`, and `ssrf.go`. HMAC, SSRF, retry, and E2E delivery paths pass; the full failure matrix was not evaluated.

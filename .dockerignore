@@ -13,3 +13,4 @@ deployments/helm/
 *.log
 bin/
 coverage.out
+artifacts/

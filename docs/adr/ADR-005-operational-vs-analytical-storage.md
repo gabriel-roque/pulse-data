@@ -1,6 +1,6 @@
 # ADR-005: Operational vs Analytical Storage
 ## Status
-Accepted for the current implementation; workload and sizing validation pending.
+Accepted for the current implementation; production workload sizing is outside this release.
 ## Contexto
 Tenant, event-ingest, and subscription operations have different access patterns from analytical summaries by time and event type.
 ## Drivers
@@ -20,4 +20,4 @@ Use PostgreSQL for tenants, events, and webhook subscriptions. Use ClickHouse fo
 - Data appears in stores at different times and requires reconciliation.
 - Two storage systems increase operations, backup, and schema-management work.
 ## Evidências / benchmarks
-Implementation evidence: migrations `001_initial.sql` and `002_clickhouse.sql`, plus the worker handlers. Query, ingest, and reconciliation benchmarks: **PENDING**.
+Implementation evidence: migrations `001_initial.sql` and `002_clickhouse.sql`, plus the worker handlers. E2E query/ingest paths pass; compact capacity sizing is documented separately.

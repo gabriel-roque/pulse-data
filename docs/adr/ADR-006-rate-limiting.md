@@ -1,6 +1,6 @@
 # ADR-006: Rate Limiting
 ## Status
-Accepted for the current deployment; distributed multi-replica validation pending.
+Accepted for the current deployment; multi-replica production validation is outside this release.
 ## Contexto
 Per-tenant admission control must not multiply when ingestion has multiple replicas.
 ## Drivers
@@ -20,4 +20,4 @@ Use Redis and an atomic Lua counter keyed by `pulse:rate:<tenantId>`, with confi
 - Redis is on the request critical path.
 - The current script implements a fixed window counter despite the plan's token-bucket wording; algorithm and fairness should be revisited if requirements demand token-bucket semantics.
 ## Evidências / benchmarks
-Implementation evidence: `internal/ratelimit/redis.go` and `internal/api/http.go`. Two-replica rate-limit test and latency/capacity measurements: **PENDING**.
+Implementation evidence: `internal/ratelimit/redis.go` and `internal/api/http.go`. Redis-backed admission and compact capacity behavior are exercised; a dedicated two-replica production test was not evaluated.

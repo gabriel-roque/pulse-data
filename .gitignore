@@ -5,6 +5,7 @@
 /bin/
 /coverage.out
 /pulse
+/artifacts/
 
 *.log
 *.tmp

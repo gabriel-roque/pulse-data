@@ -9,7 +9,8 @@ flowchart LR
     W --> X[External APIs\nsigned webhooks]
 
     I -.-> R[(Redis\ndistributed rate limit)]
-    Q[Query API\ntenant-scoped] --> CH
+    UI[Analytics UI] --> Q[Query API\ntenant-scoped]
+    Q --> CH
     K --> D[(events.dlq)]
 
     subgraph Support

@@ -72,4 +72,4 @@ ingestion request and the rate-limit metric.
 Send SIGTERM, confirm readiness behavior, and observe worker processing and
 offset commits. Use the gated script in `tests/integration/shutdown.sh`.
 Record the drain duration, in-flight event outcome, and any duplicate or lost
-effects. The result is `PENDING` until that script is run and recorded.
+effects. The current release has no recorded full drain measurement.

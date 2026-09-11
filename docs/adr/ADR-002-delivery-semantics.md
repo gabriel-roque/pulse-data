@@ -1,6 +1,6 @@
 # ADR-002: Delivery Semantics
 ## Status
-Accepted for the current implementation; end-to-end validation pending.
+Accepted for the current implementation; full recovery reconciliation is outside this release.
 ## Contexto
 Distributed retries and consumer restarts can redeliver an event. Exactly-once effects across PostgreSQL, ClickHouse, and external webhooks require stronger coordination than the current system provides.
 ## Drivers
@@ -20,4 +20,4 @@ Use synchronous Kafka publish for the ingestion acceptance point, then at-least-
 - Redelivery is possible and every effect must be reconciled for duplicates.
 - External webhook delivery cannot be made exactly once by Pulse alone.
 ## Evidências / benchmarks
-Implementation evidence: `internal/api/http.go` and `internal/kafka/producer.go`. Duplicate, crash, and recovery evidence: **PENDING**.
+Implementation evidence: `internal/api/http.go` and `internal/kafka/producer.go`. Duplicate persistence and E2E paths are covered; full crash/recovery reconciliation was not evaluated.

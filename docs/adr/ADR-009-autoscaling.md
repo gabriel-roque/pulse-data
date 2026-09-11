@@ -1,6 +1,6 @@
 # ADR-009: Autoscaling
 ## Status
-Accepted as a Helm baseline; measurement-based tuning pending.
+Accepted as a Helm baseline; measurement-based tuning is a production follow-up.
 ## Contexto
 HTTP services and workers have different scaling signals. Kafka consumers are constrained by topic partitions, while CPU alone may not track backlog.
 ## Drivers
@@ -20,4 +20,4 @@ Provide Helm HPA defaults for ingestion, query-api, persistence-worker, analytic
 - CPU-only HPA can react late to Kafka backlog or external webhook latency.
 - HPA and PDB behavior must be tested in a real Kubernetes environment.
 ## Evidências / benchmarks
-Implementation evidence: `deployments/helm/pulse/values.yaml` and HPA template. Helm validation, HPA behavior, lag response, and resource-sizing results: **PENDING**.
+Implementation evidence: `deployments/helm/pulse/values.yaml` and HPA template. Helm rendering passes; live Kubernetes HPA and lag response were not evaluated.

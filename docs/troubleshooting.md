@@ -57,6 +57,6 @@ and satisfy the SSRF policy; see `tests/e2e/README.md`.
 
 ## No benchmark result is shown
 
-That is intentional until a load profile is executed and captured. Do not
-replace `PENDING` with the configured target. Use the result template in
-`docs/benchmarks/README.md` and the final validation report.
+That is intentional until a load profile is executed and captured. Use the
+measured profile table in `docs/benchmarks/README.md` and the final validation
+report; never substitute configured targets for measurements.

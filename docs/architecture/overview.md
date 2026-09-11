@@ -21,6 +21,7 @@
 | `analytics-worker` | Analytical event writes | ClickHouse |
 | `webhook-worker` | Subscription lookup and signed delivery | PostgreSQL, external APIs |
 | `query-api` | Tenant-scoped analytics queries | ClickHouse |
+| `analytics-ui` | Browser interface for analytics summaries | Query API |
 | Kafka | Durable transport, consumer groups, DLQ | Topic storage |
 | PostgreSQL | Tenants, events, subscriptions, delivery claims | Operational source |
 | Redis | Atomic per-tenant rate limiting | Shared limiter state |
@@ -40,7 +41,7 @@ partitions, replication factor 1, and single-instance dependencies.
 - Webhooks use claims, HMAC headers, timeout, retry backoff, circuit breaker,
   bulkhead, and SSRF checks. External side effects remain at-least-once.
 - HTTP readiness checks configured dependencies; liveness checks only the process.
-- Shutdown uses bounded contexts, but full consumer-drain evidence remains pending.
+- Shutdown uses bounded contexts; full consumer-drain evidence is not part of this release.
 
 ## Scaling constraints
 

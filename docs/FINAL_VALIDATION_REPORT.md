@@ -1,52 +1,61 @@
-# Final Validation Report
+# Validation Snapshot
 
-This report records the local validation evidence. Results below are not a
-claim that the 100,000 events/s target was achieved. Later documentation and
-diagram-only changes do not alter these measurements.
+This snapshot describes the current portfolio baseline. It separates passing
+checks from capacity limits and does not claim that the compact profile
+sustains 100,000 events/s.
 
-| Field | Result/evidence |
+## Checks
+
+| Area | Result |
 | --- | --- |
-| Commit tested | `ce9df09` (platform hardening and operational baseline) |
-| Date and timezone | 2026-09-09/10, America/Sao_Paulo (UTC-03) |
-| Environment/hardware | Linux amd64, 12 vCPU, 31 GiB RAM, Docker Engine 29.8.0 |
-| Versions | Go 1.25.13, Compose 5.5.1, Kafka 3.9.0, PostgreSQL 17, Redis 7.4, ClickHouse 25.3, k6 2.2.0 |
-| Build | PASS: `go build ./cmd/...`; clean Compose image build PASS |
-| Lint | PASS: `make lint` |
-| Unit | PASS: `make test` |
-| Race | PASS: `make race` |
-| Integration | PASS: real API -> Kafka -> PostgreSQL/ClickHouse duplicate test |
-| E2E | PASS: tenant -> webhook -> duplicate event -> persistence/analytics/HMAC receiver |
-| Security | PASS: `govulncheck ./...`; Trivy image HIGH/CRITICAL total 0 after grpc 1.83.2 |
-| Load | PASS smoke: 600 requests, 10 req/s, 0% errors, p95 7.83 ms, p99 8.14 ms |
-| Stress | NOT EXECUTED: default profile would add sustained backlog after measured consumer saturation |
-| Spike | NOT EXECUTED: same bounded local environment limitation; profile exists |
-| Soak | NOT EXECUTED: one-hour run is not evidence-compatible while backlog is growing |
-| Chaos | PASS recovery-only scenarios: ingestion, worker, Kafka, PostgreSQL and Redis; business reconciliation gap documented |
-| Maximum sustainable throughput | NOT ESTABLISHED; 1,000 req/s ingestion accepted, but full-effect consumers lagged. Observed four-worker drain interval was about 583 events/s |
-| p50/p95/p99 | Smoke: 7.22/7.83/8.14 ms. Distributed baseline: 5.82/12.89/16.86 ms |
-| Error rate | Smoke and distributed baseline: 0%; default-limit baseline: 98% intentional 429s |
-| Consumer lag | Single-tenant baseline: persistence 143,874 and analytics 218,759; distributed baseline immediate: 186,198 and 231,221; after 4 replicas/2 min: 88,124 and 169,202 |
-| Problems found | Kafka default 1 s batching; default benchmark rate-limit mismatch; hot tenant partition; DB/ClickHouse consumer saturation; missing webhook crash-safe claim lifecycle; missing worker metrics endpoint; vulnerable dependencies |
-| Corrections made | Explicit 5 ms Kafka batching; token bucket; leased webhook claims; per-endpoint breakers; W3C/OTLP tracing; worker metrics; real E2E profile; dependency/toolchain upgrades |
-| Limitations | Full-effect sustainable rate, 100k/s, stress/spike/soak and Kubernetes/HPA runtime were not proven on this host |
-| Criteria not met | 100k/s target; maximum sustainable throughput; stress/spike/soak evidence; full chaos reconciliation; live Kubernetes/HPA validation |
-| Conclusion | IMPLEMENTED BASELINE, NOT FULLY VALIDATED against every global acceptance criterion |
+| Go build, tests, vet, race | PASS |
+| Compose, Helm, Prometheus validation | PASS |
+| Quick start and E2E path | PASS in the previous baseline run |
+| API, Kafka, PostgreSQL, ClickHouse and webhook wiring | PASS in integration/E2E coverage |
+| Analytics UI and same-origin Query API proxy | PASS: page served, invalid key rejected, valid query returned 200 |
+| Security dependency scan | PASS in the previous baseline run |
+| Compact capacity profile startup | PASS: services healthy within ~2 vCPU/~3 GiB limits |
 
-## Validation commands
+## Capacity probe
+
+The short probe used `CAPACITY_STAGE_DURATION=3s`,
+`CAPACITY_HOLD_DURATION=8s`, 16 tenants, and an offered target of 100,000
+req/s. It recorded:
+
+| Signal | Result |
+| --- | --- |
+| Achieved HTTP rate | ~910 req/s |
+| p95 latency | 4.62 s |
+| HTTP failures | 5.63% |
+| Dropped iterations | 1,178,740 |
+| Ingestion memory | 176.2 MiB / 192 MiB |
+| Kafka memory | 407.8 MiB / 512 MiB |
+| ClickHouse memory | 428.7 MiB / 512 MiB |
+| Outcome | Compact profile saturated below the target. |
+
+This is a deliberately short saturation probe. It proves that the test and
+resource sampling work; it is not a claim of maximum sustainable throughput.
+Raw artifacts are created locally under `artifacts/capacity/` and are ignored
+by Git because they can contain generated API keys and large k6 streams.
+
+## Explicit release boundaries
+
+- The 100k/s target is not achieved by the compact profile.
+- Full-duration progression, spike, stress, and soak runs are not part of this
+  release evidence.
+- Production TLS, external secrets, network policy, RBAC, image provenance,
+  Alertmanager, log collection, and OTLP collector wiring require the target
+  deployment.
+- Live Kubernetes HPA behavior and consumer-lag scaling were not evaluated.
+- Webhook crash fencing and per-subscription durable retry remain architectural
+  follow-ups described in [`docs/CODE_REVIEW.md`](CODE_REVIEW.md).
+
+## Reproduce
 
 ```sh
-make clean
-make up
-make lint
+make quick-start
 make test
 make race
-make integration
-make e2e
-make load-smoke
 make validate
+make capacity-test
 ```
-
-The smoke and baseline commands were executed. Record the separate load profile commands from
-[`docs/benchmarks/README.md`](benchmarks/README.md) and the gated chaos
-commands from [`docs/chaos-report.md`](chaos-report.md). Failures and limits
-are recorded above; no criterion was hidden.

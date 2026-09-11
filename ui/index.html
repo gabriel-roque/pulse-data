@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#102a43">
+    <title>Pulse Analytics Console</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Pulse Analytics home">
+          <span class="brand-mark">P</span>
+          <span>
+            <strong>Pulse</strong>
+            <small>Analytics Console</small>
+          </span>
+        </a>
+        <div class="system-status" id="system-status" data-state="idle">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-label">Ready to query</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">CLICKHOUSE QUERY LAYER</p>
+            <h1>See the shape of your events.</h1>
+            <p class="hero-copy">Explore tenant-scoped event volume without opening the database directly.</p>
+          </div>
+          <div class="hero-note">
+            <span class="note-kicker">Consistency</span>
+            <strong>Eventually consistent</strong>
+            <span>Analytics arrive after Kafka processing.</span>
+          </div>
+        </section>
+
+        <section class="workspace" aria-label="Analytics workspace">
+          <aside class="query-panel panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">QUERY</p>
+                <h2>Build a view</h2>
+              </div>
+              <span class="lock-label">Tenant scoped</span>
+            </div>
+
+            <form id="query-form">
+              <label for="api-key">Tenant API key</label>
+              <input id="api-key" name="api-key" type="password" autocomplete="off" placeholder="pulse_..." required>
+              <p class="field-hint">Used only for this browser session.</p>
+
+              <div class="field-grid">
+                <div>
+                  <label for="from">From</label>
+                  <input id="from" name="from" type="datetime-local" required>
+                </div>
+                <div>
+                  <label for="to">To</label>
+                  <input id="to" name="to" type="datetime-local" required>
+                </div>
+              </div>
+
+              <label for="event-type">Event type <span class="optional">Optional</span></label>
+              <input id="event-type" name="event-type" type="text" maxlength="200" placeholder="e.g. payment.completed">
+
+              <div class="presets" aria-label="Time range presets">
+                <button type="button" class="preset" data-hours="24">24 hours</button>
+                <button type="button" class="preset" data-hours="168">7 days</button>
+                <button type="button" class="preset" data-hours="744">31 days</button>
+              </div>
+
+              <button class="primary-button" type="submit">
+                <span id="submit-label">Run query</span>
+                <span class="button-arrow" aria-hidden="true">-&gt;</span>
+              </button>
+            </form>
+
+            <p class="query-limit">Maximum range: 31 days. Queries use the authenticated tenant from your API key.</p>
+          </aside>
+
+          <section class="results-column" aria-live="polite">
+            <div id="error-message" class="error-message" role="alert" hidden></div>
+
+            <div class="metrics-grid">
+              <article class="metric-card panel">
+                <span class="metric-label">Unique events</span>
+                <strong id="total-events">-</strong>
+                <span class="metric-detail" id="range-label">Run a query to populate</span>
+              </article>
+              <article class="metric-card panel accent-card">
+                <span class="metric-label">Event types</span>
+                <strong id="type-count">-</strong>
+                <span class="metric-detail">Distinct types in range</span>
+              </article>
+              <article class="metric-card panel">
+                <span class="metric-label">Data source</span>
+                <strong class="source-value">ClickHouse</strong>
+                <span class="metric-detail">Through the Query API</span>
+              </article>
+            </div>
+
+            <article class="chart-card panel">
+              <div class="panel-heading chart-heading">
+                <div>
+                  <p class="eyebrow">DISTRIBUTION</p>
+                  <h2>Events by type</h2>
+                </div>
+                <span class="chart-caption">Unique event IDs</span>
+              </div>
+              <div id="chart" class="bar-chart empty-state">
+                <div class="empty-icon" aria-hidden="true">+</div>
+                <p>Run a query to see event distribution.</p>
+              </div>
+            </article>
+
+            <article class="table-card panel">
+              <div class="panel-heading table-heading">
+                <div>
+                  <p class="eyebrow">RESULTS</p>
+                  <h2>Summary rows</h2>
+                </div>
+                <span id="result-count" class="result-count">0 rows</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Event type</th>
+                      <th scope="col">Unique events</th>
+                      <th scope="col" class="align-right">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody id="results-body">
+                    <tr class="table-empty"><td colspan="3">No results yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+        </section>
+      </main>
+
+      <footer>
+        <span>Pulse local analytics</span>
+        <span>Tenant credentials never leave this page.</span>
+      </footer>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

@@ -55,8 +55,11 @@ export function postEvent(profile) {
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     tags: { endpoint: 'events', profile },
   });
-  check(response, {
+  const checks = {
     'event accepted after durability point': (r) => r.status === 202 && r.headers['X-Pulse-Durability'],
-    'response contains event id': (r) => r.body && r.body.includes(id),
-  });
+  };
+  if (__ENV.LOAD_CHECK_RESPONSE_BODY !== 'false') {
+    checks['response contains event id'] = (r) => r.body && r.body.includes(id);
+  }
+  check(response, checks);
 }

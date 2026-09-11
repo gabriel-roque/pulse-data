@@ -55,4 +55,4 @@ certification.
 | API key hash and rotation | unit/integration output | PASS |
 | SSRF and HMAC tests | unit/E2E output | PASS |
 | Secret scan and image scan | Trivy image HIGH/CRITICAL | PASS |
-| TLS, network policy, RBAC | target deployment evidence | PENDING |
+| TLS, network policy, RBAC | target deployment evidence | Required before production |

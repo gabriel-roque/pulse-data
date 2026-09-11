@@ -85,9 +85,9 @@
   <text x="235" y="730" text-anchor="middle" class="small">shared across API replicas</text>
 
   <rect x="440" y="625" width="330" height="125" rx="16" fill="#e6eef7" class="card"/>
-  <text x="605" y="670" text-anchor="middle" class="heading">Query API</text>
+  <text x="605" y="670" text-anchor="middle" class="heading">Analytics UI</text>
   <text x="605" y="704" text-anchor="middle" class="body">tenant-scoped analytics</text>
-  <text x="605" y="730" text-anchor="middle" class="small">reads ClickHouse</text>
+  <text x="605" y="730" text-anchor="middle" class="small">through the Query API</text>
 
   <rect x="810" y="625" width="720" height="125" rx="16" fill="#102a43" stroke="#102a43" stroke-width="2"/>
   <text x="1170" y="670" text-anchor="middle" class="inverse-heading">Observability</text>

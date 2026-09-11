@@ -5,7 +5,7 @@ COMPOSE := docker compose
 IMAGE ?= pulse:local
 LOAD_TEST ?= tests/load/smoke.js
 
-.PHONY: up down clean quick-start stress-test test race integration e2e load-smoke validate lint build fmt vet scan
+.PHONY: up down clean quick-start stress-test capacity-test test race integration e2e load-smoke validate lint build fmt vet scan
 
 up:
 	$(COMPOSE) up -d --build
@@ -15,6 +15,9 @@ quick-start:
 
 stress-test:
 	./scripts/stress-test.sh
+
+capacity-test:
+	./scripts/capacity-test.sh
 
 down:
 	$(COMPOSE) down

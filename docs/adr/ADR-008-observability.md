@@ -1,6 +1,6 @@
 # ADR-008: Observability
 ## Status
-Accepted as the baseline; production coverage and trace validation pending.
+Accepted as the local baseline; production collectors and trace coverage are outside this release.
 ## Contexto
 The platform has multiple asynchronous boundaries, so request success alone cannot show processing, lag, delivery, or loss behavior.
 ## Drivers
@@ -20,4 +20,4 @@ Expose Prometheus metrics from HTTP services, provision Prometheus/Grafana/Loki/
 - Labels such as tenant require cardinality and privacy controls.
 - Dashboard and trace correctness must be verified against live traffic.
 ## Evidências / benchmarks
-Implementation evidence: `internal/telemetry/metrics.go` and `observability/`. Prometheus scrape, dashboard, log correlation, and trace propagation results: **PENDING**.
+Implementation evidence: `internal/telemetry/metrics.go` and `observability/`. Prometheus and Grafana configuration validate; end-to-end log collector and trace export require deployment-specific wiring.

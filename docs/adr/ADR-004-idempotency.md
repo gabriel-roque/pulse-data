@@ -1,6 +1,6 @@
 # ADR-004: Idempotency
 ## Status
-Accepted for operational persistence; downstream effect validation pending.
+Accepted for operational persistence; downstream long-run reconciliation is outside this release.
 ## Contexto
 At-least-once consumers can process the same `(tenantId,eventId)` more than once. Persistence must not create duplicate operational event rows.
 ## Drivers
@@ -20,4 +20,4 @@ Use `(tenant_id, event_id)` as the logical key. PostgreSQL enforces a unique con
 - A unique write does not automatically make webhook side effects exactly once.
 - ClickHouse merge timing and external delivery need reconciliation tests.
 ## Evidências / benchmarks
-Implementation evidence: `migrations/001_initial.sql`, `internal/persistence/postgres.go`, and `migrations/002_clickhouse.sql`. Duplicate and concurrent-redelivery results: **PENDING**.
+Implementation evidence: `migrations/001_initial.sql`, `internal/persistence/postgres.go`, and `migrations/002_clickhouse.sql`. PostgreSQL duplicate handling and the E2E duplicate path pass; long-run downstream reconciliation was not evaluated.

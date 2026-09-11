@@ -1,6 +1,6 @@
 # ADR-003: Partition Strategy
 ## Status
-Accepted for v1; hot-partition benchmark pending.
+Accepted for v1; hot-tenant alternatives are outside this release.
 ## Contexto
 Events need a stable Kafka key. Ordering by tenant is useful, but a dominant tenant can concentrate traffic on one partition.
 ## Drivers
@@ -20,4 +20,4 @@ Use `tenantId` as the Kafka message key. Reconsider `tenantId + bucket` only aft
 - A single dominant tenant can create a hot partition.
 - Scaling consumers beyond the partition count does not increase useful parallelism.
 ## Evidências / benchmarks
-Implementation evidence: `internal/kafka/producer.go:30` and the 12-partition local topic. Hot-partition distribution, lag, and alternative comparison: **PENDING**.
+Implementation evidence: `internal/kafka/producer.go:30` and the 12-partition local topic. The capacity probe used multiple tenants; a dedicated hot-tenant comparison was not evaluated.

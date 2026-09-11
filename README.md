@@ -36,6 +36,10 @@ The script creates `.env` when absent, builds the image, starts the complete
 local Compose profile, waits for readiness, and runs the real E2E flow. It
 leaves the stack running.
 
+After startup, open the analytics UI at
+[`http://127.0.0.1:3001`](http://127.0.0.1:3001). Enter a tenant API key,
+choose a time range, and run a tenant-scoped ClickHouse summary query.
+
 ```sh
 make down   # stop containers
 make clean  # stop and remove containers and volumes
@@ -57,12 +61,25 @@ replace them before using a shared environment.
 | `make validate` | Validate Compose, Helm, and Prometheus configuration. |
 | `make scan` | Run `govulncheck ./...`. |
 | `./scripts/stress-test.sh` | Run the k6 stress profile. |
+| `make capacity-test` | Run the 100k/s scenario with resource sampling. |
 
 The stress script requires k6, waits for ingestion readiness, and provisions
 multiple local tenants when no API key is supplied. It ramps to 100,000
 requests/s; a failure at saturation is evidence, not a successful capacity
 claim. Configure `PULSE_API_URL`, `PULSE_API_KEY` or `PULSE_API_KEYS`, and
 `PULSE_STRESS_TENANTS` as needed.
+
+For a reproducible capacity run under the compact Compose budget, use:
+
+```sh
+make capacity-test
+```
+
+The scenario raises the rate limit to `100000/1s`, provisions 128 tenants by
+default to distribute Kafka keys, samples every service's CPU and memory, and
+writes evidence under `artifacts/capacity/`. The compact budget is a resource
+containment profile of about 2 vCPU and 3 GiB; it is not expected to sustain
+100k/s until a measured run proves otherwise.
 
 ## API
 
@@ -76,11 +93,15 @@ routes are:
 - `GET /v1/analytics/summary` — query tenant-scoped ClickHouse summaries.
 - `GET /health/live` and `GET /health/ready` — process and dependency probes.
 
+The browser UI uses the analytics route through its same-origin proxy; it does
+not connect directly to ClickHouse.
+
 ## Documentation map
 
 | Topic | Document |
 | --- | --- |
 | Architecture and failure boundaries | [`docs/architecture/overview.md`](docs/architecture/overview.md) |
+| Technology and resource rationale | [`docs/resources.md`](docs/resources.md) |
 | Architecture decisions | [`docs/adr/`](docs/adr/) |
 | Security controls and production requirements | [`docs/security.md`](docs/security.md) |
 | Operations and incident actions | [`docs/runbooks/README.md`](docs/runbooks/README.md) |
@@ -97,7 +118,7 @@ and `tests/chaos/README.md`.
 
 ## Validation policy
 
-Compilation is not treated as production validation. Record the tested commit,
-environment, throughput, latency, error rate, consumer lag, security checks,
-and limitations in the final validation report. Until those fields contain
-captured evidence, the project remains **not fully validated**.
+Compilation is not treated as production validation. The repository is a
+measured local baseline: use the validation snapshot and capacity artifacts to
+understand what passed, where the compact profile saturated, and which
+production requirements belong to the target deployment.

@@ -1,8 +1,9 @@
 # Chaos Report
 
 The repository contains gated Compose scenarios in `tests/chaos/run.sh`. The
-recovery-only scenarios below were executed on commit `55e9d98`; they preserve
-volumes and do not claim business-event reconciliation where it was not run.
+matrix below records recovery-only evidence from the local baseline; it
+preserves volumes and does not claim business-event reconciliation where it was
+not run.
 
 ## Safety gate
 

@@ -1,6 +1,6 @@
 # ADR-001: Messaging Platform
 ## Status
-Accepted for the current implementation; production scale and HA validation pending.
+Accepted for the current local implementation; production HA is outside this release.
 ## Contexto
 Pulse needs durable fan-out from ingestion to independent persistence, analytics, and webhook consumers.
 ## Drivers
@@ -21,4 +21,4 @@ Use Kafka with `events.raw` and `events.dlq`. The producer uses synchronous writ
 - Kafka operations, partition sizing, rebalance behavior, and retention must be managed.
 - The Compose topology has one broker and replication factor 1, so it is not HA evidence.
 ## Evidências / benchmarks
-Implementation evidence: `internal/kafka/producer.go` and Compose topic creation. Throughput, lag, restart durability, and production HA evidence: **PENDING**.
+Implementation evidence: `internal/kafka/producer.go` and Compose topic creation. The compact capacity probe measured saturation below the offered target; production HA was not evaluated.
