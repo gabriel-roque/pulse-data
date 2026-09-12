@@ -36,6 +36,21 @@ func (c ClickHouse) Ready(ctx context.Context) error { return c.conn.Ping(ctx) }
 func (c ClickHouse) Record(ctx context.Context, e events.Event) error {
 	return c.conn.Exec(ctx, `INSERT INTO events (tenant_id,event_id,event_type,event_timestamp,payload) VALUES (?, ?, ?, ?, ?)`, e.TenantID, e.EventID, e.Type, e.Timestamp, e.Payload)
 }
+func (c ClickHouse) RecordBatch(ctx context.Context, batch []events.Event) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	insert, err := c.conn.PrepareBatch(ctx, `INSERT INTO events (tenant_id,event_id,event_type,event_timestamp,payload)`)
+	if err != nil {
+		return err
+	}
+	for _, event := range batch {
+		if err := insert.Append(event.TenantID, event.EventID, event.Type, event.Timestamp, string(event.Payload)); err != nil {
+			return err
+		}
+	}
+	return insert.Send()
+}
 func (c ClickHouse) Summary(ctx context.Context, tenantID, eventType string, from, to time.Time) ([]Summary, error) {
 	rows, err := c.conn.Query(ctx, `SELECT event_type, uniqExact(event_id) FROM events FINAL WHERE tenant_id=? AND (?='' OR event_type=?) AND event_timestamp>=? AND event_timestamp<? GROUP BY event_type ORDER BY uniqExact(event_id) DESC`, tenantID, eventType, eventType, from, to)
 	if err != nil {

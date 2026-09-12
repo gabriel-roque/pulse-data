@@ -13,8 +13,10 @@ failure model is in [`docs/architecture/overview.md`](docs/architecture/overview
 
 ## Status
 
-This repository contains an implemented baseline, not proof of the 100,000
-events/s target. The current evidence and known limits are in
+This repository contains a compact implemented baseline plus a scalable
+batch-ingestion lab. The validated 100,000 events/s result applies to the lab's
+Kafka ingress boundary, not to the single-event compact profile or downstream
+end-to-end processing. Current evidence and limits are in
 [`docs/FINAL_VALIDATION_REPORT.md`](docs/FINAL_VALIDATION_REPORT.md).
 
 Core semantics:
@@ -62,6 +64,7 @@ replace them before using a shared environment.
 | `make scan` | Run `govulncheck ./...`. |
 | `./scripts/stress-test.sh` | Run the k6 stress profile. |
 | `make capacity-test` | Run the 100k/s scenario with resource sampling. |
+| `make capacity-lab` | Run the scalable batch-ingestion lab at 100k events/s. |
 
 The stress script requires k6, waits for ingestion readiness, and provisions
 multiple local tenants when no API key is supplied. It ramps to 100,000
@@ -77,9 +80,19 @@ make capacity-test
 
 The scenario raises the rate limit to `100000/1s`, provisions 128 tenants by
 default to distribute Kafka keys, samples every service's CPU and memory, and
-writes evidence under `artifacts/capacity/`. The compact budget is a resource
-containment profile of about 2 vCPU and 3 GiB; it is not expected to sustain
-100k/s until a measured run proves otherwise.
+writes evidence under `artifacts/capacity/`, including consumer lag. The
+compact budget is a resource containment profile of about 2 vCPU and 3 GiB;
+it is not expected to sustain 100k/s. A measured expanded single-node profile
+reached 2,300 durable req/s within the HTTP SLO, while downstream effects
+remained below 700 events/s per worker group and accumulated lag.
+
+For the scalable lab, use `make capacity-lab`. It uses `POST /v1/events/batch`
+with 500 events per request, 48 Kafka partitions, four persistence workers,
+four analytics workers, four webhook workers, batched PostgreSQL/ClickHouse
+writes, and a fresh-volume profile. The default ingress gate requires zero
+dropped iterations and exact batch counts; downstream lag is recorded
+separately. Use `PULSE_CAPACITY_GATE=end-to-end` to require downstream drain
+and store reconciliation instead.
 
 ## API
 

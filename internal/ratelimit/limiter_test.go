@@ -78,6 +78,19 @@ func TestMemoryTokenBucketIsAtomicAcrossGoroutines(t *testing.T) {
 	}
 }
 
+func TestMemoryAllowNReservesBatchAtomically(t *testing.T) {
+	l := NewMemory(5, time.Minute)
+	if ok, err := l.AllowN(context.Background(), "tenant", 4); err != nil || !ok {
+		t.Fatalf("batch was not allowed: allowed=%v err=%v", ok, err)
+	}
+	if ok, err := l.AllowN(context.Background(), "tenant", 2); err != nil || ok {
+		t.Fatalf("partial batch was allowed: allowed=%v err=%v", ok, err)
+	}
+	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+		t.Fatalf("remaining token was not preserved: allowed=%v err=%v", ok, err)
+	}
+}
+
 func TestMemoryInvalidWindowFailsClosed(t *testing.T) {
 	l := NewMemoryWithClock(1, 0, time.Now)
 	ok, err := l.Allow(context.Background(), "tenant")

@@ -1,5 +1,10 @@
 import http from 'k6/http';
 import { check, fail } from 'k6';
+import { Counter, Rate } from 'k6/metrics';
+
+export const eventAcceptance = new Rate('event_acceptance');
+export const requestedEvents = new Counter('requested_events');
+export const acceptedEvents = new Counter('accepted_events');
 
 export const apiURL = (__ENV.PULSE_API_URL || __ENV.API_URL || '').replace(/\/$/, '');
 export const apiKeys = (__ENV.PULSE_API_KEYS || __ENV.PULSE_API_KEY || __ENV.API_KEY || '')
@@ -25,6 +30,8 @@ export function thresholds() {
     http_req_failed: [`rate<${maxErrorRate}`],
     http_req_duration: [`p(95)<${p95}`, `p(99)<${p99}`],
     checks: ['rate>0.99'],
+    event_acceptance: ['rate>0.99'],
+    dropped_iterations: ['count==0'],
   };
 }
 
@@ -42,24 +49,38 @@ export function setup() {
   return { startedAt: new Date().toISOString() };
 }
 
-export function postEvent(profile) {
-  const id = `evt-load-${profile}-${__VU}-${__ITER}`;
-  const body = JSON.stringify({
-    eventId: id,
-    type: `load.${profile}`,
-    timestamp: new Date().toISOString(),
-    payload: { profile, vu: __VU, iteration: __ITER },
-  });
+export function postEvent(profile, batchSize = 1) {
+  const events = [];
+  for (let index = 0; index < batchSize; index += 1) {
+    events.push({
+      eventId: `evt-load-${profile}-${__VU}-${__ITER}-${index}`,
+      type: `load.${profile}`,
+      timestamp: new Date().toISOString(),
+      payload: { profile, vu: __VU, iteration: __ITER, index },
+    });
+  }
+  const body = JSON.stringify(batchSize === 1 ? events[0] : events);
   const key = apiKeys[(__VU - 1) % apiKeys.length];
-  const response = http.post(`${apiURL}/v1/events`, body, {
+  const response = http.post(`${apiURL}${batchSize === 1 ? '/v1/events' : '/v1/events/batch'}`, body, {
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     tags: { endpoint: 'events', profile },
   });
+  requestedEvents.add(batchSize);
+  let accepted = response.status === 202;
+  if (accepted && batchSize > 1) {
+    try {
+      accepted = JSON.parse(response.body).count === batchSize;
+    } catch (_) {
+      accepted = false;
+    }
+  }
+  eventAcceptance.add(accepted);
+  acceptedEvents.add(accepted ? batchSize : 0);
   const checks = {
-    'event accepted after durability point': (r) => r.status === 202 && r.headers['X-Pulse-Durability'],
+    'event accepted after durability point': () => accepted && response.headers['X-Pulse-Durability'],
   };
-  if (__ENV.LOAD_CHECK_RESPONSE_BODY !== 'false') {
-    checks['response contains event id'] = (r) => r.body && r.body.includes(id);
+  if (__ENV.LOAD_CHECK_RESPONSE_BODY !== 'false' && batchSize === 1) {
+    checks['response contains event id'] = (r) => r.body && r.body.includes(events[0].eventId);
   }
   check(response, checks);
 }

@@ -8,11 +8,14 @@ import (
 	"time"
 )
 
-var ErrLimited = errors.New("rate limit exceeded")
 var ErrUnavailable = errors.New("rate limiter unavailable")
 
 type Limiter interface {
 	Allow(ctx context.Context, tenantID string) (bool, error)
+}
+
+type BatchLimiter interface {
+	AllowN(ctx context.Context, tenantID string, amount int) (bool, error)
 }
 
 type Memory struct {
@@ -43,7 +46,14 @@ func NewMemoryWithClock(limit int, window time.Duration, now func() time.Time) *
 	return &Memory{limit: limit, rate: rate, now: now, items: make(map[string]bucket)}
 }
 
-func (m *Memory) Allow(_ context.Context, tenantID string) (bool, error) {
+func (m *Memory) Allow(ctx context.Context, tenantID string) (bool, error) {
+	return m.AllowN(ctx, tenantID, 1)
+}
+
+func (m *Memory) AllowN(_ context.Context, tenantID string, amount int) (bool, error) {
+	if amount <= 0 {
+		return true, nil
+	}
 	if m.limit <= 0 {
 		return true, nil
 	}
@@ -62,11 +72,11 @@ func (m *Memory) Allow(_ context.Context, tenantID string) (bool, error) {
 		b.tokens = min(float64(m.limit), b.tokens+now.Sub(b.timestamp).Seconds()*m.rate)
 		b.timestamp = now
 	}
-	if b.tokens < 1 {
+	if b.tokens < float64(amount) {
 		m.items[tenantID] = b
 		return false, nil
 	}
-	b.tokens--
+	b.tokens -= float64(amount)
 	m.items[tenantID] = b
 	return true, nil
 }

@@ -3,8 +3,13 @@ package persistence
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pulse-data/pulse/internal/auth"
 	"github.com/pulse-data/pulse/internal/events"
@@ -18,7 +23,7 @@ func NewPostgres(ctx context.Context, dsn string) (*Postgres, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns = 20
+	cfg.MaxConns = int32Env("PULSE_POSTGRES_MAX_CONNS", 20)
 	p, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -78,8 +83,51 @@ func (p *Postgres) SaveEvent(ctx context.Context, event events.Event) (bool, err
 	return result.RowsAffected() == 1, err
 }
 
+func (p *Postgres) SaveEvents(ctx context.Context, batch []events.Event) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	_, err := p.pool.CopyFrom(ctx, pgx.Identifier{"events"}, []string{"tenant_id", "event_id", "event_type", "event_timestamp", "payload"}, pgx.CopyFromSlice(len(batch), func(index int) ([]any, error) {
+		event := batch[index]
+		return []any{event.TenantID, event.EventID, event.Type, event.Timestamp, event.Payload}, nil
+	}))
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return err
+	}
+	return p.saveEventsInsert(ctx, batch)
+}
+
+func (p *Postgres) saveEventsInsert(ctx context.Context, batch []events.Event) error {
+	var query strings.Builder
+	query.WriteString(`INSERT INTO events(tenant_id,event_id,event_type,event_timestamp,payload) VALUES `)
+	args := make([]any, 0, len(batch)*5)
+	for i, event := range batch {
+		if i > 0 {
+			query.WriteString(",")
+		}
+		base := i*5 + 1
+		_, _ = fmt.Fprintf(&query, "($%d,$%d,$%d,$%d,$%d)", base, base+1, base+2, base+3, base+4)
+		args = append(args, event.TenantID, event.EventID, event.Type, event.Timestamp, event.Payload)
+	}
+	query.WriteString(` ON CONFLICT(tenant_id,event_id) DO NOTHING`)
+	_, err := p.pool.Exec(ctx, query.String(), args...)
+	return err
+}
+
 type EventStore interface {
 	SaveEvent(context.Context, events.Event) (bool, error)
+}
+
+func int32Env(key string, fallback int32) int32 {
+	value, err := strconv.ParseInt(os.Getenv(key), 10, 32)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return int32(value)
 }
 
 func (p *Postgres) CreateSubscription(ctx context.Context, sub webhook.Subscription) (webhook.Subscription, error) {

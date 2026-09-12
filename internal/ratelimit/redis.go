@@ -12,6 +12,7 @@ const tokenBucketLua = `
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
 local ttl = tonumber(ARGV[3])
+local amount = tonumber(ARGV[4])
 local redis_time = redis.call('TIME')
 local now = tonumber(redis_time[1]) * 1000000 + tonumber(redis_time[2])
 local state = redis.call('HMGET', KEYS[1], 'tokens', 'timestamp')
@@ -30,8 +31,8 @@ else
 end
 
 local allowed = 0
-if tokens >= 1 then
-    tokens = tokens - 1
+if tokens >= amount then
+    tokens = tokens - amount
     allowed = 1
 end
 redis.call('HSET', KEYS[1], 'tokens', tokens, 'timestamp', timestamp)
@@ -52,6 +53,13 @@ func NewRedis(client redis.UniversalClient, limit int, window time.Duration) *Re
 	return &Redis{client: client, limit: limit, window: window, prefix: "pulse:rate:"}
 }
 func (r *Redis) Allow(ctx context.Context, tenantID string) (bool, error) {
+	return r.AllowN(ctx, tenantID, 1)
+}
+
+func (r *Redis) AllowN(ctx context.Context, tenantID string, amount int) (bool, error) {
+	if amount <= 0 {
+		return true, nil
+	}
 	if r.limit <= 0 {
 		return true, nil
 	}
@@ -71,7 +79,7 @@ func (r *Redis) Allow(ctx context.Context, tenantID string) (bool, error) {
 		ttl = 1
 	}
 	refillRate := float64(r.limit) / float64(windowMicros)
-	n, err := tokenScript.Run(ctx, r.client, []string{r.prefix + tenantID}, r.limit, refillRate, ttl).Int()
+	n, err := tokenScript.Run(ctx, r.client, []string{r.prefix + tenantID}, r.limit, refillRate, ttl, amount).Int()
 	if err != nil {
 		return false, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}

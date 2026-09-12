@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -52,7 +51,7 @@ func setup(ctx context.Context, cfg platform.Config) (dependencies, error) {
 		if err != nil {
 			return d, fmt.Errorf("postgres: %w", err)
 		}
-		d.postgres, d.store = p, p
+		d.postgres, d.store = p, auth.NewCachedStore(p, cfg.AuthCacheTTL)
 		checks = append(checks, p.Ready)
 		d.close = p.Close
 	} else if cfg.LocalFallback {
@@ -125,12 +124,12 @@ func RunHTTP(service string) error {
 	reg := prometheus.NewRegistry()
 	metrics := telemetry.NewMetrics(reg)
 	var webhooks webhook.Store
-	if p, ok := d.store.(*persistence.Postgres); ok {
-		webhooks = p
+	if d.postgres != nil {
+		webhooks = d.postgres
 	} else if cfg.LocalFallback {
 		webhooks = webhook.NewMemoryStore()
 	}
-	h := api.NewHandler(d.store, d.publisher, d.limiter, metrics, cfg.MaxPayloadBytes, durability(cfg), cfg.AdminToken, d.analytics, webhooks, reg)
+	h := api.NewHandler(d.store, d.publisher, d.limiter, metrics, cfg.MaxPayloadBytes, cfg.MaxBatchBytes, cfg.MaxBatchEvents, durability(cfg), cfg.AdminToken, d.analytics, webhooks, reg)
 	h.SetReadyCheck(d.ready)
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: h.Routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
@@ -171,6 +170,7 @@ func RunWorker(service string) error {
 	reg := prometheus.NewRegistry()
 	metrics := telemetry.NewMetrics(reg)
 	var handler kafka.ConsumerHandler
+	var batchHandler kafka.BatchConsumerHandler
 	switch service {
 	case "persistence-worker":
 		if cfg.PostgresDSN == "" {
@@ -181,7 +181,9 @@ func RunWorker(service string) error {
 			return err
 		}
 		defer p.Close()
-		handler = worker.PersistenceHandler{Store: p, Metrics: metrics}.Handle
+		persistenceHandler := worker.PersistenceHandler{Store: p, Metrics: metrics}
+		handler = persistenceHandler.Handle
+		batchHandler = persistenceHandler.HandleBatch
 	case "analytics-worker":
 		if cfg.ClickHouseAddr == "" {
 			return errors.New("PULSE_CLICKHOUSE_ADDR is required")
@@ -191,7 +193,9 @@ func RunWorker(service string) error {
 			return err
 		}
 		defer c.Close()
-		handler = worker.AnalyticsHandler{Store: c}.Handle
+		analyticsHandler := worker.AnalyticsHandler{Store: c}
+		handler = analyticsHandler.Handle
+		batchHandler = analyticsHandler.HandleBatch
 	case "webhook-worker":
 		if cfg.PostgresDSN == "" {
 			return errors.New("PULSE_POSTGRES_DSN is required")
@@ -201,12 +205,17 @@ func RunWorker(service string) error {
 			return err
 		}
 		defer p.Close()
-		handler = worker.WebhookHandler{Store: p, Dispatcher: webhook.NewDispatcher(20, 5, 15*time.Second), Metrics: metrics}.Handle
+		webhookHandler := worker.WebhookHandler{Store: p, Dispatcher: webhook.NewDispatcher(20, 5, 15*time.Second), Metrics: metrics}
+		handler = webhookHandler.Handle
+		batchHandler = webhookHandler.HandleBatch
 	default:
 		return fmt.Errorf("unknown worker service %q", service)
 	}
 	consumer := kafka.NewConsumerWithDLQ(cfg.KafkaBrokers, cfg.KafkaTopic, service+"s", "events.dlq", handler)
 	consumer.SetMetrics(metrics, service)
+	if batchHandler != nil && cfg.ConsumerBatchSize > 1 {
+		consumer.SetBatchHandler(batchHandler, cfg.ConsumerBatchSize, cfg.ConsumerBatchTimeout)
+	}
 	defer consumer.Close()
 	metricsServer := &http.Server{Addr: cfg.MetricsAddr, Handler: metricsRoutes(reg), ReadHeaderTimeout: 5 * time.Second}
 	metricsErr := make(chan error, 1)
@@ -237,15 +246,4 @@ func metricsRoutes(reg prometheus.Gatherer) http.Handler {
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return mux
-}
-
-func Run() error {
-	service := os.Getenv("PULSE_SERVICE")
-	if service == "" {
-		service = "ingestion"
-	}
-	if service == "ingestion" || service == "query-api" {
-		return RunHTTP(service)
-	}
-	return RunWorker(service)
 }

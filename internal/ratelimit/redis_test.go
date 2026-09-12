@@ -57,8 +57,8 @@ func TestRedisTokenBucketPassesCapacityRateAndTTL(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("allowed=%v err=%v", ok, err)
 	}
-	if len(fake.args) != 3 {
-		t.Fatalf("script args=%v, want capacity, refill rate, ttl", fake.args)
+	if len(fake.args) != 4 {
+		t.Fatalf("script args=%v, want capacity, refill rate, ttl, amount", fake.args)
 	}
 	if got, want := fake.args[0], 10; got != want {
 		t.Fatalf("capacity=%v, want %v", got, want)
@@ -68,6 +68,9 @@ func TestRedisTokenBucketPassesCapacityRateAndTTL(t *testing.T) {
 	}
 	if got, want := fake.args[2], int64(1500); got != want {
 		t.Fatalf("ttl=%v, want %v milliseconds", got, want)
+	}
+	if got, want := fake.args[3], 1; got != want {
+		t.Fatalf("amount=%v, want %v", got, want)
 	}
 }
 

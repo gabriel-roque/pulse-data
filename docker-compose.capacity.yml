@@ -1,0 +1,40 @@
+services:
+  ingestion:
+    deploy:
+      resources:
+        limits: {cpus: "2.00", memory: "4G"}
+  query-api:
+    deploy:
+      resources:
+        limits: {cpus: "0.20", memory: "256M"}
+  persistence-worker:
+    deploy:
+      resources:
+        limits: {cpus: "0.40", memory: "512M"}
+  analytics-worker:
+    deploy:
+      resources:
+        limits: {cpus: "0.50", memory: "768M"}
+  webhook-worker:
+    deploy:
+      resources:
+        limits: {cpus: "0.10", memory: "256M"}
+  kafka:
+    deploy:
+      resources:
+        limits: {cpus: "1.50", memory: "2G"}
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx1024m"
+  postgres:
+    deploy:
+      resources:
+        limits: {cpus: "3.00", memory: "4G"}
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "max_connections=120", "-c", "work_mem=8MB"]
+  redis:
+    deploy:
+      resources:
+        limits: {cpus: "0.10", memory: "128M"}
+  clickhouse:
+    deploy:
+      resources:
+        limits: {cpus: "2.00", memory: "4G"}

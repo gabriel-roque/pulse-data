@@ -20,6 +20,10 @@ type PersistenceHandler struct {
 	Metrics *telemetry.Metrics
 }
 
+type persistenceBatchStore interface {
+	SaveEvents(context.Context, []events.Event) error
+}
+
 func (h PersistenceHandler) Handle(ctx context.Context, event events.Event) error {
 	ctx, span := telemetry.StartSpan(ctx, "pulse.persistence.save_event", trace.WithAttributes(
 		attribute.String("db.system", "postgresql"),
@@ -35,7 +39,30 @@ func (h PersistenceHandler) Handle(ctx context.Context, event events.Event) erro
 	return err
 }
 
+func (h PersistenceHandler) HandleBatch(ctx context.Context, batch []events.Event) error {
+	store, ok := h.Store.(persistenceBatchStore)
+	if !ok {
+		for _, event := range batch {
+			if err := h.Handle(ctx, event); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	ctx, span := telemetry.StartSpan(ctx, "pulse.persistence.save_batch", trace.WithAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.Int("pulse.batch_size", len(batch)),
+	))
+	err := store.SaveEvents(ctx, batch)
+	telemetry.EndSpan(span, err)
+	return err
+}
+
 type AnalyticsHandler struct{ Store analytics.Store }
+
+type analyticsBatchStore interface {
+	RecordBatch(context.Context, []events.Event) error
+}
 
 func (h AnalyticsHandler) Handle(ctx context.Context, event events.Event) error {
 	ctx, span := telemetry.StartSpan(ctx, "pulse.analytics.record", trace.WithAttributes(
@@ -43,6 +70,25 @@ func (h AnalyticsHandler) Handle(ctx context.Context, event events.Event) error 
 		attribute.String("pulse.event_id", event.EventID),
 	))
 	err := h.Store.Record(ctx, event)
+	telemetry.EndSpan(span, err)
+	return err
+}
+
+func (h AnalyticsHandler) HandleBatch(ctx context.Context, batch []events.Event) error {
+	store, ok := h.Store.(analyticsBatchStore)
+	if !ok {
+		for _, event := range batch {
+			if err := h.Handle(ctx, event); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	ctx, span := telemetry.StartSpan(ctx, "pulse.analytics.record_batch", trace.WithAttributes(
+		attribute.String("db.system", "clickhouse"),
+		attribute.Int("pulse.batch_size", len(batch)),
+	))
+	err := store.RecordBatch(ctx, batch)
 	telemetry.EndSpan(span, err)
 	return err
 }
@@ -65,6 +111,46 @@ func (h WebhookHandler) Handle(ctx context.Context, event events.Event) error {
 	if err != nil {
 		return err
 	}
+	return h.deliver(ctx, event, subs)
+}
+
+func (h WebhookHandler) HandleBatch(ctx context.Context, batch []events.Event) error {
+	subscriptions := make(map[string][]webhook.Subscription)
+	var failedEvents []events.Event
+	var failures []error
+	for _, event := range batch {
+		key := event.TenantID + "\x00" + event.Type
+		subs, ok := subscriptions[key]
+		if !ok {
+			listCtx, listSpan := telemetry.StartSpan(ctx, "pulse.webhook.list_subscriptions", trace.WithAttributes(
+				attribute.String("pulse.tenant_id", event.TenantID),
+				attribute.String("pulse.event_type", event.Type),
+			))
+			var err error
+			subs, err = h.Store.ListSubscriptions(listCtx, event.TenantID, event.Type)
+			telemetry.EndSpan(listSpan, err)
+			if err != nil {
+				return err
+			}
+			subscriptions[key] = subs
+		}
+		if err := h.deliver(ctx, event, subs); err != nil {
+			var terminal *kafka.DeadLetterError
+			if errors.As(err, &terminal) {
+				failedEvents = append(failedEvents, event)
+				failures = append(failures, err)
+				continue
+			}
+			return err
+		}
+	}
+	if len(failures) > 0 {
+		return &kafka.BatchDeadLetterError{Events: failedEvents, Err: errors.Join(failures...)}
+	}
+	return nil
+}
+
+func (h WebhookHandler) deliver(ctx context.Context, event events.Event, subs []webhook.Subscription) error {
 	var failures []error
 	for _, sub := range subs {
 		claimCtx, claimSpan := telemetry.StartSpan(ctx, "pulse.webhook.claim_delivery", trace.WithAttributes(

@@ -27,22 +27,27 @@ import (
 type Publisher interface {
 	Publish(context.Context, events.Event) error
 }
+type BatchPublisher interface {
+	PublishBatch(context.Context, []events.Event) error
+}
 type Handler struct {
-	auth        auth.Store
-	publisher   Publisher
-	limiter     ratelimit.Limiter
-	metrics     *telemetry.Metrics
-	maxPayload  int
-	durability  string
-	analytics   analytics.Store
-	adminToken  string
-	webhooks    webhook.Store
-	metricsHTTP http.Handler
-	readyCheck  func(context.Context) error
+	auth           auth.Store
+	publisher      Publisher
+	limiter        ratelimit.Limiter
+	metrics        *telemetry.Metrics
+	maxPayload     int
+	maxBatchBytes  int
+	maxBatchEvents int
+	durability     string
+	analytics      analytics.Store
+	adminToken     string
+	webhooks       webhook.Store
+	metricsHTTP    http.Handler
+	readyCheck     func(context.Context) error
 }
 
-func NewHandler(store auth.Store, publisher Publisher, limiter ratelimit.Limiter, metrics *telemetry.Metrics, maxPayload int, durability, adminToken string, analytical analytics.Store, webhooks webhook.Store, registry prometheus.Gatherer) *Handler {
-	return &Handler{auth: store, publisher: publisher, limiter: limiter, metrics: metrics, maxPayload: maxPayload, durability: durability, analytics: analytical, adminToken: adminToken, webhooks: webhooks, metricsHTTP: promhttp.HandlerFor(registry, promhttp.HandlerOpts{})}
+func NewHandler(store auth.Store, publisher Publisher, limiter ratelimit.Limiter, metrics *telemetry.Metrics, maxPayload, maxBatchBytes, maxBatchEvents int, durability, adminToken string, analytical analytics.Store, webhooks webhook.Store, registry prometheus.Gatherer) *Handler {
+	return &Handler{auth: store, publisher: publisher, limiter: limiter, metrics: metrics, maxPayload: maxPayload, maxBatchBytes: maxBatchBytes, maxBatchEvents: maxBatchEvents, durability: durability, analytics: analytical, adminToken: adminToken, webhooks: webhooks, metricsHTTP: promhttp.HandlerFor(registry, promhttp.HandlerOpts{})}
 }
 
 func (h *Handler) SetReadyCheck(check func(context.Context) error) { h.readyCheck = check }
@@ -65,6 +70,7 @@ func (h *Handler) Routes() http.Handler {
 	})
 	mux.Handle("GET /metrics", h.metricsHTTP)
 	mux.HandleFunc("POST /v1/events", h.ingest)
+	mux.HandleFunc("POST /v1/events/batch", h.ingestBatch)
 	mux.HandleFunc("POST /v1/tenants", h.createTenant)
 	mux.HandleFunc("POST /v1/tenants/", h.rotateTenant)
 	mux.HandleFunc("POST /v1/webhooks", h.createWebhook)
@@ -119,6 +125,79 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 	h.metrics.EventsReceived.WithLabelValues().Inc()
 	w.Header().Set("X-Pulse-Durability", h.durability)
 	writeJSON(w, http.StatusAccepted, map[string]string{"eventId": event.EventID, "status": "accepted"})
+}
+
+func (h *Handler) ingestBatch(w http.ResponseWriter, r *http.Request) {
+	tenant, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	reader := http.MaxBytesReader(w, r.Body, int64(h.maxBatchBytes))
+	defer r.Body.Close()
+	var raw []json.RawMessage
+	decoder := json.NewDecoder(reader)
+	if err := decoder.Decode(&raw); err != nil || len(raw) == 0 || len(raw) > h.maxBatchEvents {
+		h.fail(w, http.StatusBadRequest, "batch must contain between 1 and the configured maximum number of events")
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		h.fail(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	batch := make([]events.Event, 0, len(raw))
+	for _, value := range raw {
+		event, err := events.Decode(value, tenant.ID, h.maxPayload)
+		if err != nil {
+			h.metrics.EventsFailed.WithLabelValues("validation").Inc()
+			h.fail(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		batch = append(batch, event)
+	}
+	if allowed, err := h.allow(r.Context(), tenant.ID, len(batch)); err != nil {
+		h.fail(w, http.StatusServiceUnavailable, "rate limiter unavailable")
+		return
+	} else if !allowed {
+		h.metrics.RateLimitRejected.WithLabelValues().Inc()
+		h.fail(w, http.StatusTooManyRequests, "rate limit exceeded")
+		return
+	}
+	if publisher, ok := h.publisher.(BatchPublisher); ok {
+		if err := publisher.PublishBatch(r.Context(), batch); err != nil {
+			h.metrics.EventsFailed.WithLabelValues("publish").Add(float64(len(batch)))
+			h.fail(w, http.StatusServiceUnavailable, "events were not durable")
+			return
+		}
+	} else {
+		for _, event := range batch {
+			if err := h.publisher.Publish(r.Context(), event); err != nil {
+				h.metrics.EventsFailed.WithLabelValues("publish").Inc()
+				h.fail(w, http.StatusServiceUnavailable, "events were not durable")
+				return
+			}
+		}
+	}
+	h.metrics.Published.WithLabelValues("events.raw").Add(float64(len(batch)))
+	h.metrics.EventsReceived.WithLabelValues().Add(float64(len(batch)))
+	w.Header().Set("X-Pulse-Durability", h.durability)
+	writeJSON(w, http.StatusAccepted, map[string]any{"count": len(batch), "status": "accepted"})
+}
+
+func (h *Handler) allow(ctx context.Context, tenantID string, amount int) (bool, error) {
+	if h.limiter == nil {
+		return true, nil
+	}
+	if limiter, ok := h.limiter.(ratelimit.BatchLimiter); ok {
+		return limiter.AllowN(ctx, tenantID, amount)
+	}
+	for i := 0; i < amount; i++ {
+		allowed, err := h.limiter.Allow(ctx, tenantID)
+		if err != nil || !allowed {
+			return allowed, err
+		}
+	}
+	return true, nil
 }
 
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (auth.Tenant, bool) {

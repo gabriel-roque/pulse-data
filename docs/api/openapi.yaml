@@ -75,6 +75,34 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/events/batch:
+    post:
+      tags: [Events]
+      summary: Publish multiple events at one Kafka durability point
+      description: The whole batch is acknowledged only after all events are durably published. The default request body limit is 16 MiB and the event limit is 500; deployments may configure both limits.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 500
+              items: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '202':
+          description: All events were published to the configured Kafka producer durability point
+          headers:
+            X-Pulse-Durability:
+              schema: { type: string, example: kafka-ack }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedBatch' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/tenants:
     post:
       tags: [Tenants]
@@ -205,6 +233,12 @@ components:
       required: [eventId, status]
       properties:
         eventId: { type: string }
+        status: { type: string, enum: [accepted] }
+    AcceptedBatch:
+      type: object
+      required: [count, status]
+      properties:
+        count: { type: integer, minimum: 1 }
         status: { type: string, enum: [accepted] }
     TenantCreated:
       type: object

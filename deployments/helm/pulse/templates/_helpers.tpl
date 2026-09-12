@@ -17,9 +17,3 @@ app.kubernetes.io/instance: {{ .Release.Name | quote }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
 {{- end -}}
-
-{{- define "pulse.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "pulse.name" .root | quote }}
-app.kubernetes.io/instance: {{ .root.Release.Name | quote }}
-app.kubernetes.io/component: {{ .component | quote }}
-{{- end -}}

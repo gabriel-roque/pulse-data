@@ -20,3 +20,10 @@ Default thresholds are error rate below 1%, p95 below 250 ms, p99 below 1 s,
 and checks above 99%. A saturation profile is allowed to fail these thresholds;
 that failure is the evidence used to identify maximum sustainable throughput,
 not a reason to weaken the check.
+
+The capacity lab sets `CAPACITY_BATCH_SIZE=500`, measures events/s through
+`POST /v1/events/batch`, uses p95/p99 limits of 1s/2s, and requires exact batch
+counts and zero dropped iterations. Downstream drain and PostgreSQL/ClickHouse
+reconciliation are diagnostic by default; set `PULSE_CAPACITY_GATE=end-to-end`
+to require them. The regular profiles continue to exercise the single-event
+endpoint.

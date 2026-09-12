@@ -6,4 +6,4 @@ CREATE TABLE IF NOT EXISTS events (
     payload String,
     received_at DateTime64(3, 'UTC') DEFAULT now64(3)
 ) ENGINE = ReplacingMergeTree(received_at)
-ORDER BY (tenant_id, event_timestamp, event_id);
+ORDER BY (tenant_id, event_id);

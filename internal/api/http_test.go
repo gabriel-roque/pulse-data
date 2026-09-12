@@ -26,13 +26,18 @@ func (p *testPublisher) Publish(_ context.Context, e events.Event) error {
 	return nil
 }
 
+func (p *testPublisher) PublishBatch(_ context.Context, batch []events.Event) error {
+	p.events = append(p.events, batch...)
+	return nil
+}
+
 func testServer(t *testing.T) (*httptest.Server, *auth.MemoryStore, *testPublisher) {
 	t.Helper()
 	store := auth.NewMemoryStore()
 	pub := &testPublisher{}
 	reg := prometheus.NewRegistry()
 	metrics := telemetry.NewMetrics(reg)
-	h := NewHandler(store, pub, ratelimit.NewMemory(10, time.Minute), metrics, 1024, "local-memory-test-only", "admin", nil, webhook.NewMemoryStore(), reg)
+	h := NewHandler(store, pub, ratelimit.NewMemory(10, time.Minute), metrics, 1024, 1<<20, 500, "local-memory-test-only", "admin", nil, webhook.NewMemoryStore(), reg)
 	return httptest.NewServer(h.Routes()), store, pub
 }
 func TestIngestRequiresAuthAndPublishesAfterValidation(t *testing.T) {
@@ -54,6 +59,49 @@ func TestIngestRequiresAuthAndPublishesAfterValidation(t *testing.T) {
 		t.Fatal("event was not published with tenant")
 	}
 }
+
+func TestIngestBatchPublishesAllEventsAfterDurability(t *testing.T) {
+	srv, store, pub := testServer(t)
+	defer srv.Close()
+	_, key, err := store.Create(context.Background(), "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`[%s,%s]`, validEventBody(), validEventBody())
+	req := httptest.NewRequest(http.MethodPost, "/v1/events/batch", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Config.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status %d", res.Code)
+	}
+	if len(pub.events) != 2 {
+		t.Fatalf("published %d events, want 2", len(pub.events))
+	}
+}
+
+func TestIngestBatchRejectsOversizedBody(t *testing.T) {
+	store := auth.NewMemoryStore()
+	pub := &testPublisher{}
+	reg := prometheus.NewRegistry()
+	h := NewHandler(store, pub, ratelimit.NewMemory(100, time.Minute), telemetry.NewMetrics(reg), 1024, 64, 500, "test", "admin", nil, webhook.NewMemoryStore(), reg)
+	_, key, err := store.Create(context.Background(), "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/events/batch", bytes.NewReader(bytes.Repeat([]byte("x"), 5000)))
+	req.Header.Set("Authorization", "Bearer "+key)
+	res := httptest.NewRecorder()
+	h.Routes().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want %d", res.Code, http.StatusBadRequest)
+	}
+	if len(pub.events) != 0 {
+		t.Fatal("oversized batch was published")
+	}
+}
+
 func TestTenantCreationAndRotation(t *testing.T) {
 	srv, store, _ := testServer(t)
 	defer srv.Close()
@@ -109,7 +157,7 @@ func TestReadinessReturnsServiceUnavailableWhenCheckFails(t *testing.T) {
 	// dedicated handler so the readiness contract stays independent of stores.
 	reg := prometheus.NewRegistry()
 	metrics := telemetry.NewMetrics(reg)
-	h := NewHandler(auth.NewMemoryStore(), &testPublisher{}, ratelimit.NewMemory(10, time.Minute), metrics, 1024, "test", "admin", nil, webhook.NewMemoryStore(), reg)
+	h := NewHandler(auth.NewMemoryStore(), &testPublisher{}, ratelimit.NewMemory(10, time.Minute), metrics, 1024, 1<<20, 500, "test", "admin", nil, webhook.NewMemoryStore(), reg)
 	h.SetReadyCheck(func(context.Context) error { return errors.New("dependency unavailable") })
 	res := httptest.NewRecorder()
 	h.Routes().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health/ready", nil))

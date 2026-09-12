@@ -16,10 +16,19 @@ behavior, CPU, memory, and the tested resource profile.
 | Stress | Up to 100k req/s, 5-minute hold | Not run as a full-duration test. |
 | Soak | 1k req/s for 1 hour | Not run because backlog was already growing. |
 | Capacity | 100k req/s with compact Compose limits | Short probe measured ~910 req/s, p95 4.62 s, 5.63% failures. |
+| Boundary | Fresh-volume expanded single-node profile | 2,300 req/s passed the HTTP SLO; 2,400 req/s failed p95. Downstream lag grew at both rates. |
+| Lab | 100k events/s through batch endpoint | Formal hold passed Kafka ingress SLO at 99,885.8 events/s; downstream lag is reported separately and end-to-end is not claimed. |
 
 The short capacity probe is saturation evidence, not a sustainable-rate or
-100k/s acceptance. Its resource samples and k6 summary are written to the
+100k/s acceptance. Its resource samples, consumer lag samples, and k6 summary are written to the
 ignored `artifacts/capacity/<run-id>/` directory.
+
+The lab profile is run with `make capacity-lab`. Its rate limiter is disabled
+to isolate throughput; use the compact and integration profiles to validate
+rate-limit behavior. The ingress gate requires p95 below 1s, p99 below 2s,
+zero dropped iterations, and exact batch counts on fresh volumes. Downstream
+lag and store reconciliation are recorded diagnostically; use
+`PULSE_CAPACITY_GATE=end-to-end` when they must gate success.
 
 ## Run
 

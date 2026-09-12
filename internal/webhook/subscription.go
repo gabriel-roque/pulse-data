@@ -4,11 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"sync"
 	"time"
-
-	"github.com/pulse-data/pulse/internal/events"
 )
 
 type Subscription struct {
@@ -30,8 +27,6 @@ type Store interface {
 	CompleteDelivery(context.Context, string, string, string) error
 	ReleaseDelivery(context.Context, string, string, string) error
 }
-
-var ErrSubscriptionNotFound = errors.New("subscription not found")
 
 func NewSecret() ([]byte, error) { b := make([]byte, 32); _, err := rand.Read(b); return b, err }
 func NewID() (string, error) {
@@ -137,9 +132,4 @@ func (s *MemoryStore) currentTime() time.Time {
 		return s.now()
 	}
 	return time.Now()
-}
-
-type EventDelivery struct {
-	Subscription Subscription
-	Event        events.Event
 }
