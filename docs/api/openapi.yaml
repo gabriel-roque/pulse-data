@@ -47,34 +47,6 @@ paths:
           description: Prometheus exposition format
           content:
             text/plain: {}
-  /v1/events:
-    post:
-      tags: [Events]
-      summary: Publish an event
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/EventInput' }
-            example:
-              eventId: evt_8fa91
-              type: payment.completed
-              timestamp: '2026-09-09T22:30:00Z'
-              payload: { paymentId: '123', amount: 499.9 }
-      responses:
-        '202':
-          description: Published to the configured Kafka producer durability point
-          headers:
-            X-Pulse-Durability:
-              schema: { type: string, example: kafka-ack }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AcceptedEvent' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '429': { $ref: '#/components/responses/RateLimited' }
-        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/events/batch:
     post:
       tags: [Events]
@@ -228,12 +200,6 @@ components:
             - type: string
             - type: number
             - type: boolean
-    AcceptedEvent:
-      type: object
-      required: [eventId, status]
-      properties:
-        eventId: { type: string }
-        status: { type: string, enum: [accepted] }
     AcceptedBatch:
       type: object
       required: [count, status]

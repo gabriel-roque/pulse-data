@@ -51,10 +51,11 @@ fi
 event_id="evt-e2e-$(date +%s)-$$"
 event_type='e2e.webhook'
 event=$(jq -nc --arg id "$event_id" --arg type "$event_type" '{eventId:$id,type:$type,timestamp:(now|todate),payload:{source:"external-e2e"}}')
+batch=$(jq -nc --argjson event "$event" '[$event]')
 for attempt in 1 2; do
     status=$(curl --silent --show-error --output "$tmp/event-$attempt.json" --write-out '%{http_code}' \
-        -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' --data "$event" \
-        "$INGESTION_URL/v1/events")
+        -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' --data "$batch" \
+        "$INGESTION_URL/v1/events/batch")
     [ "$status" = 202 ] || { cat "$tmp/event-$attempt.json" >&2; test_die "E2E event attempt $attempt returned HTTP $status"; }
 done
 

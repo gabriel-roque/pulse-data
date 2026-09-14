@@ -14,16 +14,16 @@ analytics UI, Docker Compose, Helm, and executable validation scripts.
 - PostgreSQL deduplicates `(tenant_id, event_id)`.
 - Webhooks have HMAC, SSRF checks, timeout, retry, circuit breaker, bulkhead,
   and delivery claims.
-- The compact Compose budget is explicit and sampled by `make capacity-test`.
+- The isolated Kafka ingress profile is sampled by `make capacity-test`.
 - The analytics UI queries ClickHouse only through the authenticated Query API.
 
 ## Capacity conclusion
 
-The compact profile is approximately 2 vCPU and 3 GiB. A short 100k/s offered
-probe achieved approximately 910 req/s with p95 4.62 s and 5.63% HTTP failures.
-The profile is suitable for a bounded demonstration environment, not for the
-100k/s target. Scaling the target requires more CPU/memory, Kafka partitions,
-worker replicas, and database capacity.
+The batch-only ingress path reached 99,996.7 accepted events/s during a formal
+100,000 events/s hold. All 30,000,500 events matched Kafka offsets, with zero
+HTTP failures, zero dropped iterations, p95 43.83 ms, and p99 76.73 ms. The
+capacity claim ends at Kafka acknowledgement; downstream stores and webhook
+delivery require independent sizing.
 
 ## Production follow-ups
 

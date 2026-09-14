@@ -52,10 +52,6 @@ type Redis struct {
 func NewRedis(client redis.UniversalClient, limit int, window time.Duration) *Redis {
 	return &Redis{client: client, limit: limit, window: window, prefix: "pulse:rate:"}
 }
-func (r *Redis) Allow(ctx context.Context, tenantID string) (bool, error) {
-	return r.AllowN(ctx, tenantID, 1)
-}
-
 func (r *Redis) AllowN(ctx context.Context, tenantID string, amount int) (bool, error) {
 	if amount <= 0 {
 		return true, nil

@@ -13,10 +13,10 @@ failure model is in [`docs/architecture/overview.md`](docs/architecture/overview
 
 ## Status
 
-This repository contains a compact implemented baseline plus a scalable
-batch-ingestion lab. The validated 100,000 events/s result applies to the lab's
-Kafka ingress boundary, not to the single-event compact profile or downstream
-end-to-end processing. Current evidence and limits are in
+Pulse exposes one ingestion contract: authenticated HTTP batches published
+synchronously to Kafka. The validated target is 100,000 events/s at this Kafka
+acknowledgement boundary. Asynchronous downstream effects are outside that
+capacity claim. Current evidence and limits are in
 [`docs/FINAL_VALIDATION_REPORT.md`](docs/FINAL_VALIDATION_REPORT.md).
 
 Core semantics:
@@ -28,7 +28,8 @@ Core semantics:
 
 ## Quick start
 
-Requirements: Docker Compose v2, `curl`, and `jq`.
+Quick-start requirements: Docker Compose v2, `curl`, and `jq`. The capacity
+test additionally requires `k6` and GNU `timeout`.
 
 ```sh
 ./scripts/quick-start.sh
@@ -62,44 +63,27 @@ replace them before using a shared environment.
 | `make integration` | Run integration coverage against Compose. |
 | `make validate` | Validate Compose, Helm, and Prometheus configuration. |
 | `make scan` | Run `govulncheck ./...`. |
-| `./scripts/stress-test.sh` | Run the k6 stress profile. |
-| `make capacity-test` | Run the 100k/s scenario with resource sampling. |
-| `make capacity-lab` | Run the scalable batch-ingestion lab at 100k events/s. |
+| `make capacity-test` | Validate 100k events/s at the Kafka ingress boundary. |
 
-The stress script requires k6, waits for ingestion readiness, and provisions
-multiple local tenants when no API key is supplied. It ramps to 100,000
-requests/s; a failure at saturation is evidence, not a successful capacity
-claim. Configure `PULSE_API_URL`, `PULSE_API_KEY` or `PULSE_API_KEYS`, and
-`PULSE_STRESS_TENANTS` as needed.
-
-For a reproducible capacity run under the compact Compose budget, use:
+For the reproducible capacity test, use:
 
 ```sh
 make capacity-test
 ```
 
-The scenario raises the rate limit to `100000/1s`, provisions 128 tenants by
-default to distribute Kafka keys, samples every service's CPU and memory, and
-writes evidence under `artifacts/capacity/`, including consumer lag. The
-compact budget is a resource containment profile of about 2 vCPU and 3 GiB;
-it is not expected to sustain 100k/s. A measured expanded single-node profile
-reached 2,300 durable req/s within the HTTP SLO, while downstream effects
-remained below 700 events/s per worker group and accumulated lag.
-
-For the scalable lab, use `make capacity-lab`. It uses `POST /v1/events/batch`
-with 500 events per request, 48 Kafka partitions, four persistence workers,
-four analytics workers, four webhook workers, batched PostgreSQL/ClickHouse
-writes, and a fresh-volume profile. The default ingress gate requires zero
-dropped iterations and exact batch counts; downstream lag is recorded
-separately. Use `PULSE_CAPACITY_GATE=end-to-end` to require downstream drain
-and store reconciliation instead.
+The command creates an isolated fresh-volume environment and submits 200 HTTP
+batches/s with 500 events each for five minutes. It requires zero HTTP errors,
+zero dropped iterations, exact response counts, the configured latency SLOs,
+and equality between requested events, accepted events, and Kafka offsets.
+Results are written under `artifacts/capacity/`; the temporary environment is
+removed automatically.
 
 ## API
 
 The HTTP contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml). The main
 routes are:
 
-- `POST /v1/events` — authenticate, validate, rate-limit, and publish an event.
+- `POST /v1/events/batch` — authenticate, validate, rate-limit, and publish a batch to Kafka.
 - `POST /v1/tenants` — create a tenant with the operator admin token.
 - `POST /v1/tenants/{id}/rotate` — rotate a tenant API key.
 - `POST /v1/webhooks` — register a signed webhook endpoint.
@@ -131,7 +115,6 @@ and `tests/chaos/README.md`.
 
 ## Validation policy
 
-Compilation is not treated as production validation. The repository is a
-measured local baseline: use the validation snapshot and capacity artifacts to
-understand what passed, where the compact profile saturated, and which
-production requirements belong to the target deployment.
+Compilation is not treated as capacity validation. Use `make capacity-test`
+and its generated summary to verify the 100k events/s target on the current
+machine and configuration.

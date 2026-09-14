@@ -25,15 +25,10 @@ decorative dependency.
 
 ## Resource policy
 
-The default Compose profile is a compact local budget of approximately 2 vCPU
-and 3 GiB. This is a containment target for a developer machine, not a claim
-of 100k events/s capacity. `make capacity-test` raises the tenant limiter,
-offers 100k/s, samples every service, and records the first bottleneck.
-
-The current short probe reached the 100k/s offered stage but achieved roughly
-910 req/s with 4.62 s p95 and 5.63% HTTP failures. The repository therefore
-demonstrates the architecture and the measurement discipline, not a false
-claim that the compact profile sustains the target.
+The default Compose profile is a compact developer environment. The isolated
+capacity profile is dedicated to the HTTP-to-Kafka target. `make capacity-test`
+offers 100,000 events/s as 200 batches/s, samples the participating containers,
+and reconciles accepted events with Kafka offsets before passing.
 
 ## UI design system
 

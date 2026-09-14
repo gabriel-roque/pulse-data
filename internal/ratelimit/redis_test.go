@@ -53,7 +53,7 @@ func TestRedisTokenBucketPassesCapacityRateAndTTL(t *testing.T) {
 	fake := &fakeScripter{result: 1}
 	l := &Redis{client: fake, limit: 10, window: 1500 * time.Millisecond, prefix: "pulse:rate:"}
 
-	ok, err := l.Allow(context.Background(), "tenant")
+	ok, err := l.AllowN(context.Background(), "tenant", 1)
 	if err != nil || !ok {
 		t.Fatalf("allowed=%v err=%v", ok, err)
 	}
@@ -78,7 +78,7 @@ func TestRedisFailureFailsClosed(t *testing.T) {
 	fake := &fakeScripter{result: 1, err: errors.New("redis down")}
 	l := &Redis{client: fake, limit: 1, window: time.Minute, prefix: "pulse:rate:"}
 
-	ok, err := l.Allow(context.Background(), "tenant")
+	ok, err := l.AllowN(context.Background(), "tenant", 1)
 	if ok {
 		t.Fatal("Redis failure was allowed")
 	}

@@ -25,9 +25,6 @@ import (
 )
 
 type Publisher interface {
-	Publish(context.Context, events.Event) error
-}
-type BatchPublisher interface {
 	PublishBatch(context.Context, []events.Event) error
 }
 type Handler struct {
@@ -69,62 +66,12 @@ func (h *Handler) Routes() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 	mux.Handle("GET /metrics", h.metricsHTTP)
-	mux.HandleFunc("POST /v1/events", h.ingest)
 	mux.HandleFunc("POST /v1/events/batch", h.ingestBatch)
 	mux.HandleFunc("POST /v1/tenants", h.createTenant)
 	mux.HandleFunc("POST /v1/tenants/", h.rotateTenant)
 	mux.HandleFunc("POST /v1/webhooks", h.createWebhook)
 	mux.HandleFunc("GET /v1/analytics/summary", h.summary)
 	return h.instrument(mux)
-}
-
-func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
-	tenant, ok := h.authenticate(w, r)
-	if !ok {
-		return
-	}
-	if h.limiter != nil {
-		allowed, err := h.limiter.Allow(r.Context(), tenant.ID)
-		if err != nil {
-			h.fail(w, http.StatusServiceUnavailable, "rate limiter unavailable")
-			return
-		}
-		if !allowed {
-			h.metrics.RateLimitRejected.WithLabelValues().Inc()
-			h.fail(w, http.StatusTooManyRequests, "rate limit exceeded")
-			return
-		}
-	}
-	reader := http.MaxBytesReader(w, r.Body, int64(h.maxPayload)+4096)
-	defer r.Body.Close()
-	decoder := json.NewDecoder(reader)
-	var raw json.RawMessage
-	if err := decoder.Decode(&raw); err != nil {
-		h.fail(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		h.fail(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	event, err := events.Decode(raw, tenant.ID, h.maxPayload)
-	if err != nil {
-		h.metrics.EventsFailed.WithLabelValues("validation").Inc()
-		h.fail(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	publishStarted := time.Now()
-	if err := h.publisher.Publish(r.Context(), event); err != nil {
-		h.metrics.EventsFailed.WithLabelValues("publish").Inc()
-		h.fail(w, http.StatusServiceUnavailable, "event was not durable")
-		return
-	}
-	h.metrics.KafkaPublishLatency.WithLabelValues("events.raw").Observe(time.Since(publishStarted).Seconds())
-	h.metrics.Published.WithLabelValues("events.raw").Inc()
-	h.metrics.EventsReceived.WithLabelValues().Inc()
-	w.Header().Set("X-Pulse-Durability", h.durability)
-	writeJSON(w, http.StatusAccepted, map[string]string{"eventId": event.EventID, "status": "accepted"})
 }
 
 func (h *Handler) ingestBatch(w http.ResponseWriter, r *http.Request) {
@@ -155,49 +102,29 @@ func (h *Handler) ingestBatch(w http.ResponseWriter, r *http.Request) {
 		}
 		batch = append(batch, event)
 	}
-	if allowed, err := h.allow(r.Context(), tenant.ID, len(batch)); err != nil {
-		h.fail(w, http.StatusServiceUnavailable, "rate limiter unavailable")
-		return
-	} else if !allowed {
-		h.metrics.RateLimitRejected.WithLabelValues().Inc()
-		h.fail(w, http.StatusTooManyRequests, "rate limit exceeded")
-		return
-	}
-	if publisher, ok := h.publisher.(BatchPublisher); ok {
-		if err := publisher.PublishBatch(r.Context(), batch); err != nil {
-			h.metrics.EventsFailed.WithLabelValues("publish").Add(float64(len(batch)))
-			h.fail(w, http.StatusServiceUnavailable, "events were not durable")
+	if h.limiter != nil {
+		allowed, err := h.limiter.AllowN(r.Context(), tenant.ID, len(batch))
+		if err != nil {
+			h.fail(w, http.StatusServiceUnavailable, "rate limiter unavailable")
 			return
 		}
-	} else {
-		for _, event := range batch {
-			if err := h.publisher.Publish(r.Context(), event); err != nil {
-				h.metrics.EventsFailed.WithLabelValues("publish").Inc()
-				h.fail(w, http.StatusServiceUnavailable, "events were not durable")
-				return
-			}
+		if !allowed {
+			h.metrics.RateLimitRejected.WithLabelValues().Inc()
+			h.fail(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
 		}
 	}
+	publishStarted := time.Now()
+	if err := h.publisher.PublishBatch(r.Context(), batch); err != nil {
+		h.metrics.EventsFailed.WithLabelValues("publish").Add(float64(len(batch)))
+		h.fail(w, http.StatusServiceUnavailable, "events were not durable")
+		return
+	}
+	h.metrics.KafkaPublishLatency.WithLabelValues("events.raw").Observe(time.Since(publishStarted).Seconds())
 	h.metrics.Published.WithLabelValues("events.raw").Add(float64(len(batch)))
 	h.metrics.EventsReceived.WithLabelValues().Add(float64(len(batch)))
 	w.Header().Set("X-Pulse-Durability", h.durability)
 	writeJSON(w, http.StatusAccepted, map[string]any{"count": len(batch), "status": "accepted"})
-}
-
-func (h *Handler) allow(ctx context.Context, tenantID string, amount int) (bool, error) {
-	if h.limiter == nil {
-		return true, nil
-	}
-	if limiter, ok := h.limiter.(ratelimit.BatchLimiter); ok {
-		return limiter.AllowN(ctx, tenantID, amount)
-	}
-	for i := 0; i < amount; i++ {
-		allowed, err := h.limiter.Allow(ctx, tenantID)
-		if err != nil || !allowed {
-			return allowed, err
-		}
-	}
-	return true, nil
 }
 
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (auth.Tenant, bool) {

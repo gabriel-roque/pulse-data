@@ -3,22 +3,6 @@ services:
     deploy:
       resources:
         limits: {cpus: "2.00", memory: "4G"}
-  query-api:
-    deploy:
-      resources:
-        limits: {cpus: "0.20", memory: "256M"}
-  persistence-worker:
-    deploy:
-      resources:
-        limits: {cpus: "0.40", memory: "512M"}
-  analytics-worker:
-    deploy:
-      resources:
-        limits: {cpus: "0.50", memory: "768M"}
-  webhook-worker:
-    deploy:
-      resources:
-        limits: {cpus: "0.10", memory: "256M"}
   kafka:
     deploy:
       resources:

@@ -2,12 +2,13 @@
 
 ## Runtime path
 
-1. A tenant sends `POST /v1/events` with a bearer API key.
-2. Ingestion authenticates the tenant, applies the Redis rate limit, validates
-   strict JSON, and publishes synchronously to Kafka.
+1. A tenant sends `POST /v1/events/batch` with a bearer API key.
+2. Ingestion authenticates the tenant, reserves all batch events in the Redis
+   rate limit, validates every strict JSON envelope, and publishes the batch
+   synchronously to Kafka.
 3. Kafka uses `tenantId` as the message key. `events.raw` is consumed by three
    independent groups: persistence, analytics, and webhook delivery.
-4. The API returns `202` only after Kafka acknowledges the event. Terminal
+4. The API returns `202` only after Kafka acknowledges every event. Terminal
    malformed or explicitly dead-lettered messages go to `events.dlq`.
 5. Consumers commit offsets after successful handling. PostgreSQL, ClickHouse,
    and external webhooks are therefore eventually consistent with Kafka.

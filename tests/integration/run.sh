@@ -40,10 +40,11 @@ event_type='integration.duplicate'
 timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 event=$(jq -nc --arg id "$event_id" --arg type "$event_type" --arg timestamp "$timestamp" \
     '{eventId:$id,type:$type,timestamp:$timestamp,payload:{test:"integration",duplicate:true}}')
+batch=$(jq -nc --argjson event "$event" '[$event]')
 for attempt in 1 2; do
     status=$(curl --silent --show-error --output "$tmp/event-$attempt.json" --write-out '%{http_code}' \
-        -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' --data "$event" \
-        "$INGESTION_URL/v1/events")
+        -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' --data "$batch" \
+        "$INGESTION_URL/v1/events/batch")
     [ "$status" = 202 ] || { printf 'duplicate attempt %s returned HTTP %s\n' "$attempt" "$status" >&2; cat "$tmp/event-$attempt.json" >&2; exit 1; }
 done
 

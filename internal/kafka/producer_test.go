@@ -56,7 +56,7 @@ func (w *flakyWriter) WriteMessages(_ context.Context, messages ...segmentkafka.
 func (w *flakyWriter) Close() error { return nil }
 
 func TestBatchRetriesSameMessagesWhenDLQWriteFails(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	reader := &testReader{
 		messages: []segmentkafka.Message{

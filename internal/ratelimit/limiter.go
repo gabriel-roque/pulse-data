@@ -11,10 +11,6 @@ import (
 var ErrUnavailable = errors.New("rate limiter unavailable")
 
 type Limiter interface {
-	Allow(ctx context.Context, tenantID string) (bool, error)
-}
-
-type BatchLimiter interface {
 	AllowN(ctx context.Context, tenantID string, amount int) (bool, error)
 }
 
@@ -44,10 +40,6 @@ func NewMemoryWithClock(limit int, window time.Duration, now func() time.Time) *
 		rate = float64(limit) / window.Seconds()
 	}
 	return &Memory{limit: limit, rate: rate, now: now, items: make(map[string]bucket)}
-}
-
-func (m *Memory) Allow(ctx context.Context, tenantID string) (bool, error) {
-	return m.AllowN(ctx, tenantID, 1)
 }
 
 func (m *Memory) AllowN(_ context.Context, tenantID string, amount int) (bool, error) {

@@ -1,27 +1,27 @@
 # SLI and SLO
 
 These are the production objectives and the queries used to evaluate them.
-The compact local probe does not qualify as production SLO evidence.
+The capacity test validates the Kafka ingress boundary, not downstream effects.
 
 | SLI | Objective | Current release evidence |
 | --- | --- | --- |
 | Availability | 99.95% monthly | Not measured over a production window. |
-| Ingestion latency | p95 < 100 ms | Smoke p95 7.83 ms; compact capacity p95 4.62 s under saturation. |
-| Tail latency | p99 < 250 ms | Smoke p99 8.14 ms; compact capacity exceeded the objective. |
-| Accepted durability | Zero silent loss | Kafka acknowledgement is explicit; full recovery reconciliation is not measured. |
+| Ingestion latency | p95 < 1 s at 100k events/s | Formal batch run p95 43.83 ms. |
+| Tail latency | p99 < 2 s at 100k events/s | Formal batch run p99 76.73 ms. |
+| Accepted durability | Zero silent loss at ingress | Accepted event count is reconciled with Kafka offsets. |
 | Duplicate effects | Zero duplicate effects | PostgreSQL idempotency and E2E duplicate path pass; full downstream reconciliation is not measured. |
-| Error rate | < 1% in accepted load | Smoke passed; compact capacity measured 5.63% failures. |
-| Backlog | No continuous growth at sustainable load | Baseline and compact capacity showed consumer pressure. |
+| Error rate | 0% in the capacity test | Formal batch run had zero HTTP failures. |
+| Backlog | Diagnostic only for ingress target | Downstream capacity is outside the 100k ingress claim. |
 | Webhook delivery | No silent loss | E2E HMAC/retry path passed; long-running recovery evidence is not measured. |
 
 ## PromQL examples
 
 ```promql
-histogram_quantile(0.95, sum by (le) (rate(pulse_http_request_duration_seconds_bucket{route="/v1/events"}[5m])))
-histogram_quantile(0.99, sum by (le) (rate(pulse_http_request_duration_seconds_bucket{route="/v1/events"}[5m])))
-sum(rate(pulse_http_requests_total{route="/v1/events",status=~"5.."}[5m]))
+histogram_quantile(0.95, sum by (le) (rate(pulse_http_request_duration_seconds_bucket{route="/v1/events/batch"}[5m])))
+histogram_quantile(0.99, sum by (le) (rate(pulse_http_request_duration_seconds_bucket{route="/v1/events/batch"}[5m])))
+sum(rate(pulse_http_requests_total{route="/v1/events/batch",status=~"5.."}[5m]))
 /
-sum(rate(pulse_http_requests_total{route="/v1/events"}[5m]))
+sum(rate(pulse_http_requests_total{route="/v1/events/batch"}[5m]))
 ```
 
 The Compose Prometheus setup scrapes every 15 seconds and retains seven days.

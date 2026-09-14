@@ -21,11 +21,6 @@ import (
 
 type testPublisher struct{ events []events.Event }
 
-func (p *testPublisher) Publish(_ context.Context, e events.Event) error {
-	p.events = append(p.events, e)
-	return nil
-}
-
 func (p *testPublisher) PublishBatch(_ context.Context, batch []events.Event) error {
 	p.events = append(p.events, batch...)
 	return nil
@@ -40,14 +35,14 @@ func testServer(t *testing.T) (*httptest.Server, *auth.MemoryStore, *testPublish
 	h := NewHandler(store, pub, ratelimit.NewMemory(10, time.Minute), metrics, 1024, 1<<20, 500, "local-memory-test-only", "admin", nil, webhook.NewMemoryStore(), reg)
 	return httptest.NewServer(h.Routes()), store, pub
 }
-func TestIngestRequiresAuthAndPublishesAfterValidation(t *testing.T) {
+func TestIngestBatchRequiresAuthAndPublishesAfterValidation(t *testing.T) {
 	srv, store, pub := testServer(t)
 	defer srv.Close()
 	_, key, err := store.Create(context.Background(), "Acme")
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewReader(validEventBody()))
+	req := httptest.NewRequest(http.MethodPost, "/v1/events/batch", bytes.NewBufferString(fmt.Sprintf(`[%s]`, validEventBody())))
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
@@ -78,6 +73,16 @@ func TestIngestBatchPublishesAllEventsAfterDurability(t *testing.T) {
 	}
 	if len(pub.events) != 2 {
 		t.Fatalf("published %d events, want 2", len(pub.events))
+	}
+}
+
+func TestIndividualIngestRouteDoesNotExist(t *testing.T) {
+	srv, _, _ := testServer(t)
+	defer srv.Close()
+	res := httptest.NewRecorder()
+	srv.Config.Handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewReader(validEventBody())))
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("status %d, want %d", res.Code, http.StatusNotFound)
 	}
 }
 
@@ -133,14 +138,15 @@ func TestTenantCreationAndRotation(t *testing.T) {
 	}
 }
 
-func TestIngestRejectsMultipleJSONValues(t *testing.T) {
+func TestIngestBatchRejectsMultipleJSONValues(t *testing.T) {
 	srv, store, _ := testServer(t)
 	defer srv.Close()
 	_, key, err := store.Create(context.Background(), "Acme")
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewBuffer(append(validEventBody(), []byte(` {"extra":true}`)...)))
+	body := append([]byte(fmt.Sprintf(`[%s]`, validEventBody())), []byte(` {"extra":true}`)...)
+	req := httptest.NewRequest(http.MethodPost, "/v1/events/batch", bytes.NewBuffer(body))
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()

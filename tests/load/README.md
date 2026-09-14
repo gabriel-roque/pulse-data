@@ -1,29 +1,28 @@
-# k6 Load Profiles
+# Capacity Load Test
 
-All profiles require `PULSE_API_URL` and `PULSE_API_KEY` or
-`PULSE_API_KEYS`. They perform real HTTP POSTs and require HTTP 202 plus
-`X-Pulse-Durability`; missing dependencies or credentials fail before load.
+Pulse has one load profile: `capacity.js`. It validates 100,000 events/s at
+the Kafka acknowledgement boundary through `POST /v1/events/batch`.
 
-```sh
-PULSE_API_URL=http://127.0.0.1:8080 PULSE_API_KEY=... scripts/run-k6.sh smoke
-PULSE_API_URL=http://127.0.0.1:8080 PULSE_API_KEY=... scripts/run-k6.sh baseline
-./scripts/stress-test.sh
+The default workload is:
+
+```text
+200 HTTP requests/s x 500 events/request = 100,000 events/s for 5 minutes
 ```
 
-Profiles are fixed and intentionally honest: smoke is 10 req/s for 1 minute,
-baseline is 1k/s for 5 minutes, progression reaches 1k/5k/10k/25k/50k/75k/
-100k/s, spike rises abruptly to 10k/s, stress reaches 100k/s, and soak runs
-for 1 hour by default. Override `SOAK_RATE`, `SOAK_DURATION`, and threshold
-variables only when recording the reason with the benchmark result.
+Run it through the project entry point:
 
-Default thresholds are error rate below 1%, p95 below 250 ms, p99 below 1 s,
-and checks above 99%. A saturation profile is allowed to fail these thresholds;
-that failure is the evidence used to identify maximum sustainable throughput,
-not a reason to weaken the check.
+```sh
+make capacity-test
+```
 
-The capacity lab sets `CAPACITY_BATCH_SIZE=500`, measures events/s through
-`POST /v1/events/batch`, uses p95/p99 limits of 1s/2s, and requires exact batch
-counts and zero dropped iterations. Downstream drain and PostgreSQL/ClickHouse
-reconciliation are diagnostic by default; set `PULSE_CAPACITY_GATE=end-to-end`
-to require them. The regular profiles continue to exercise the single-event
-endpoint.
+The test requires:
+
+- every response to be HTTP `202` with `X-Pulse-Durability: kafka-ack`;
+- every response count to match the submitted batch size;
+- zero HTTP failures and zero dropped iterations;
+- p95 below 1 second and p99 below 2 seconds;
+- accepted throughput of at least 99.5% of the configured target;
+- requested, accepted, and Kafka topic event counts to match exactly.
+
+The target, batch size, duration, and thresholds are intentionally fixed so a
+successful `make capacity-test` always represents the same qualification.

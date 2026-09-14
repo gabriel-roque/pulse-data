@@ -33,9 +33,9 @@ rejected=0
 i=0
 while [ "$i" -lt "$((limit + 1))" ]; do
     endpoint=$(printf '%s\n' "$@" | sed -n "$((i % $# + 1))p")
-    body=$(jq -nc --arg id "evt-rate-$i-$(date +%s)" '{eventId:$id,type:"integration.rate",timestamp:(now|todate),payload:{n:1}}')
+    body=$(jq -nc --arg id "evt-rate-$i-$(date +%s)" '[{eventId:$id,type:"integration.rate",timestamp:(now|todate),payload:{n:1}}]')
     code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-        -H "Authorization: Bearer $key" -H 'Content-Type: application/json' --data "$body" "${endpoint%/}/v1/events")
+        -H "Authorization: Bearer $key" -H 'Content-Type: application/json' --data "$body" "${endpoint%/}/v1/events/batch")
     case "$code" in 202) accepted=$((accepted + 1)) ;; 429) rejected=$((rejected + 1)) ;; *) test_die "unexpected rate-limit response HTTP $code" ;; esac
     i=$((i + 1))
 done

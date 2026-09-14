@@ -30,24 +30,24 @@ func TestMemoryTokenBucketAllowsBurstThenRefills(t *testing.T) {
 	l := NewMemoryWithClock(3, 10*time.Second, clock.Now)
 
 	for i := 0; i < 3; i++ {
-		if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+		if ok, err := l.AllowN(context.Background(), "tenant", 1); err != nil || !ok {
 			t.Fatalf("burst request %d: allowed=%v err=%v", i, ok, err)
 		}
 	}
-	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || ok {
+	if ok, err := l.AllowN(context.Background(), "tenant", 1); err != nil || ok {
 		t.Fatalf("request beyond burst: allowed=%v err=%v", ok, err)
 	}
 
 	clock.Advance(5 * time.Second)
-	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+	if ok, err := l.AllowN(context.Background(), "tenant", 1); err != nil || !ok {
 		t.Fatalf("half-window refill: allowed=%v err=%v", ok, err)
 	}
-	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || ok {
+	if ok, err := l.AllowN(context.Background(), "tenant", 1); err != nil || ok {
 		t.Fatalf("fractional token consumed too early: allowed=%v err=%v", ok, err)
 	}
 
 	clock.Advance(5 * time.Second)
-	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+	if ok, err := l.AllowN(context.Background(), "tenant", 1); err != nil || !ok {
 		t.Fatalf("full-window refill: allowed=%v err=%v", ok, err)
 	}
 }
@@ -61,7 +61,7 @@ func TestMemoryTokenBucketIsAtomicAcrossGoroutines(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ok, err := l.Allow(context.Background(), "tenant")
+			ok, err := l.AllowN(context.Background(), "tenant", 1)
 			if err != nil {
 				t.Error(err)
 			}
@@ -86,14 +86,14 @@ func TestMemoryAllowNReservesBatchAtomically(t *testing.T) {
 	if ok, err := l.AllowN(context.Background(), "tenant", 2); err != nil || ok {
 		t.Fatalf("partial batch was allowed: allowed=%v err=%v", ok, err)
 	}
-	if ok, err := l.Allow(context.Background(), "tenant"); err != nil || !ok {
+	if ok, err := l.AllowN(context.Background(), "tenant", 1); err != nil || !ok {
 		t.Fatalf("remaining token was not preserved: allowed=%v err=%v", ok, err)
 	}
 }
 
 func TestMemoryInvalidWindowFailsClosed(t *testing.T) {
 	l := NewMemoryWithClock(1, 0, time.Now)
-	ok, err := l.Allow(context.Background(), "tenant")
+	ok, err := l.AllowN(context.Background(), "tenant", 1)
 	if ok {
 		t.Fatal("invalid window was allowed")
 	}

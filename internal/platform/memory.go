@@ -12,9 +12,9 @@ type MemoryPublisher struct {
 	Events []events.Event
 }
 
-func (p *MemoryPublisher) Publish(_ context.Context, e events.Event) error {
+func (p *MemoryPublisher) PublishBatch(_ context.Context, batch []events.Event) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.Events = append(p.Events, e)
+	p.Events = append(p.Events, batch...)
 	return nil
 }

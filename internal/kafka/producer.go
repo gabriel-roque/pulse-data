@@ -44,9 +44,6 @@ func (p *Producer) Ready(ctx context.Context) error {
 	}
 	return conn.Close()
 }
-func (p *Producer) Publish(ctx context.Context, event events.Event) error {
-	return p.PublishBatch(ctx, []events.Event{event})
-}
 func (p *Producer) PublishBatch(ctx context.Context, batch []events.Event) error {
 	if len(batch) == 0 {
 		return nil
