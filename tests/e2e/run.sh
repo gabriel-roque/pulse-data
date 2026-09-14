@@ -16,7 +16,7 @@ QUERY_URL=${PULSE_QUERY_URL:-http://127.0.0.1:8081}
 COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.yml}
 wait_http "$INGESTION_URL/health/ready" "${PULSE_READY_TIMEOUT:-120}"
 wait_http "$QUERY_URL/health/ready" "${PULSE_READY_TIMEOUT:-120}"
-curl --silent --show-error --fail "$PULSE_E2E_WEBHOOK_STATUS_URL" >/dev/null || test_die "webhook status dependency is unavailable: $PULSE_E2E_WEBHOOK_STATUS_URL"
+wait_http "$PULSE_E2E_WEBHOOK_STATUS_URL" "${PULSE_READY_TIMEOUT:-120}"
 for service in postgres kafka redis clickhouse persistence-worker analytics-worker webhook-worker; do
     compose -f "$ROOT_DIR/$COMPOSE_FILE" ps --status running --services | awk -v wanted="$service" '$0 == wanted { found=1 } END { exit(found ? 0 : 1) }' || test_die "Compose service is not running: $service"
 done
